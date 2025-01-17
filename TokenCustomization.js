@@ -9,12 +9,14 @@ class ItemType {
     static Encounter = "encounter";
     static Scene = "scene";
     static Aoe = "aoe";
+    static Open5e = "open5e"
 }
 
 class RootFolder {
     static Root = { name: "", path: "/", id: "root" };
     static Players = { name: "Players", path: "/Players", id: "playersFolder" };
     static Monsters = { name: "Monsters", path: "/Monsters", id: "monstersFolder" };
+    static Open5e = { name: "Open5e Monsters", path: "/Open5e Monsters", id: "open5eFolder" };
     static MyTokens = { name: "My Tokens", path: "/My Tokens", id: "myTokensFolder" };
     static AboveVTT = { name: "AboveVTT Tokens", path: "/AboveVTT Tokens", id: "builtinTokensFolder" };
     static DDB = { name: "D&D Beyond Tokens", path: "/DDB", id: "_DDB" };
@@ -26,6 +28,7 @@ class RootFolder {
                RootFolder.Root,
                RootFolder.Players,
                RootFolder.Monsters,
+               RootFolder.Open5e,
                RootFolder.MyTokens,
                RootFolder.AboveVTT,
                RootFolder.Encounters,
@@ -77,7 +80,7 @@ class TokenCustomization {
     tokenOptions;
 
     /** Used internally during TokenCustomization construction to ensure data integrety */
-    static validTypes = [ItemType.PC, ItemType.Monster, ItemType.MyToken, ItemType.Folder];
+    static validTypes = [ItemType.PC, ItemType.Monster, ItemType.Open5e, ItemType.MyToken, ItemType.BuiltinToken, ItemType.DDBToken, ItemType.Folder, ItemType.Aoe];
 
     /**
      * @param playerSheet {string} the id of the DDB character
@@ -97,6 +100,16 @@ class TokenCustomization {
      */
     static Monster(monsterId, tokenOptions) {
         return new TokenCustomization(monsterId, ItemType.Monster, RootFolder.Monsters.id, RootFolder.MyTokens.id, tokenOptions);
+    }
+
+    /**
+     * @param monsterId {number|string} the slug of the open 5e monster
+     * @param tokenOptions {object} the overrides for token.options
+     * @returns {TokenCustomization} the token customization for the monster
+     * @constructor
+     */
+    static open5eMonster(monsterId, tokenOptions) {
+        return new TokenCustomization(monsterId, ItemType.Open5e, RootFolder.Open5e.id, RootFolder.MyTokens.id, tokenOptions);
     }
 
     /**
@@ -126,30 +139,31 @@ class TokenCustomization {
      * @returns {TokenCustomization} a typed object instead of the raw JSON object that was given
      */
     static fromJson(obj) {
-        return new TokenCustomization(obj.id, obj.tokenType, obj.parentId, obj.rootId, obj.tokenOptions);
+        return new TokenCustomization(obj.id, obj.tokenType, obj.parentId, obj.rootId, obj.tokenOptions, obj.color);
     }
 
     // never call this directly! use the static functions above
-    constructor(id, tokenType, parentId, rootId, tokenOptions) {
+    constructor(id, tokenType, parentId, rootId, tokenOptions, color=undefined) {
         if (tokenType === ItemType.Monster) {
             id = `${id}`; // DDB uses numbers for monster ids, but we want to use strings to keep everything consistent
         }
         if (typeof id !== "string" || id.length === 0) {
-            throw `Invalid id ${id}`;
+            throw new Error(`Invalid id ${id}`);
         }
-        if (typeof rootId !== "string" || rootId.length === 0) {
-            throw `Invalid rootId ${rootId}`;
+        if ((typeof rootId !== "string" || rootId.length === 0) && parentId != '_') {
+            throw new Error(`Invalid rootId ${rootId}`);
         }
         if (!TokenCustomization.validTypes.includes(tokenType)) {
-            throw `Invalid Type ${tokenType}`;
+            throw new Error(`Invalid Type ${tokenType}`);
         }
         if (typeof parentId !== "string" || parentId.length === 0) {
-            throw `Invalid parentId ${parentId}`;
+            throw new Error(`Invalid parentId ${parentId}`);
         }
         this.id = id;
         this.tokenType = tokenType;
         this.parentId = parentId;
         this.rootId = rootId;
+        this.color = color;
         if (typeof tokenOptions === "object") {
             this.tokenOptions = {...tokenOptions}; // copy it
         } else {
@@ -172,24 +186,38 @@ class TokenCustomization {
         } else if (value === false || value === "false") {
             this.tokenOptions[key] = false;
         } else if (!isNaN(parseFloat(value)) && typeof value === "string") {
-            if (value.includes(".")) {
-                this.tokenOptions[key] = parseFloat(value);
-            } else {
-                this.tokenOptions[key] = parseInt(value);
+            if(key.includes(".")){
+                const keys = key.split('.');
+                if(keys.length == 2){
+                    if(this.tokenOptions[keys[0]] == undefined)
+                        this.tokenOptions[keys[0]] = {};
+                    if (value.includes(".")) {
+                        this.tokenOptions[keys[0]][keys[1]] = parseFloat(value);
+                    } else {
+                        this.tokenOptions[keys[0]][keys[1]] = parseInt(value);
+                    } 
+                }
+            }
+            else{
+                if (value.includes(".")) {
+                    this.tokenOptions[key] = parseFloat(value);
+                } else {
+                    this.tokenOptions[key] = parseInt(value);
+                }
             }
         } else {
             this.tokenOptions[key] = value;
         }
     }
 
-    addAlternativeImage(imageUrl) {
+    async addAlternativeImage(imageUrl) {
         if (imageUrl.startsWith("data:")) {
             return false;
         }
         if (this.tokenOptions.alternativeImages === undefined) {
             this.tokenOptions.alternativeImages = [];
         }
-        const parsed = parse_img(imageUrl);
+        const parsed = await parse_img(imageUrl);
         if (!this.tokenOptions.alternativeImages.includes(parsed)) {
             this.tokenOptions.alternativeImages.push(parsed);
             return true;
@@ -197,7 +225,7 @@ class TokenCustomization {
             return false;
         }
     }
-    removeAlternativeImage(imageUrl) {
+    async removeAlternativeImage(imageUrl) {
         if (this.tokenOptions.alternativeImages === undefined) {
             return;
         }
@@ -205,8 +233,8 @@ class TokenCustomization {
         if (typeof index === "number" && index >= 0) {
             this.tokenOptions.alternativeImages.splice(index, 1);
         }
-        const parsed = parse_img(imageUrl);
-        let parsedIndex = this.tokenOptions.alternativeImages.findIndex(i => i === parsed);
+        const parsed = await parse_img(imageUrl);
+        let parsedIndex = this.tokenOptions.alternativeImages.findIndex(i => parse_img(i) === parsed);
         if (typeof parsedIndex === "number" && parsedIndex >= 0) {
             this.tokenOptions.alternativeImages.splice(parsedIndex, 1);
         }
@@ -234,7 +262,10 @@ class TokenCustomization {
     findAncestors(found = []) {
         found.push(this);
         let parent = this.findParent();
-        if (parent) {
+        if (parent && parent.parentId != this.id && parent.parentId != '') {
+            let rootId = parent.rootId || RootFolder.allValues().find(d => parent.folderPath().includes(d.path) && d.name != '')?.id;
+            let parentCustomization = find_or_create_token_customization(parent.tokenType, parent.id, parent.parentId, rootId);
+            found.push(parentCustomization);
             return parent.findAncestors(found);
         } else {
             let root = RootFolder.findById(this.parentId);
@@ -254,7 +285,7 @@ class TokenCustomization {
     }
     folderPath() {
         const parent = this.findParent();
-        if (parent) {
+        if (parent && parent.parentId != this.id && parent.parentId != '') {
             return sanitize_folder_path(parent.findAncestors().reverse().map(tc => tc.name()).join("/"));
         }
         const root = RootFolder.findById(this.parentId) || RootFolder.findById(this.rootId);
@@ -317,6 +348,15 @@ class TokenCustomization {
     isTypeMonster() {
         return this.tokenType === ItemType.Monster;
     }
+    isTypeOpen5eMonster() {
+        return this.tokenType === ItemType.Open5e;
+    }
+    isTypeBuiltinToken() {
+        return this.tokenType === ItemType.BuiltinToken;
+    }
+    isTypeDDBToken() {
+        return this.tokenType === ItemType.DDBToken;
+    }
 
     allCombinedOptions() {
         let combinedOptions = {};
@@ -336,6 +376,9 @@ class TokenCustomization {
         }
         if (Array.isArray(this.tokenOptions.alternativeImages)) {
             clearedOptions.alternativeImages = [...this.tokenOptions.alternativeImages];
+        }
+        if (this.tokenOptions.statBlock !== undefined) {
+            clearedOptions.statBlock = this.tokenOptions.statBlock;
         }
         this.tokenOptions = clearedOptions;
     }
@@ -497,16 +540,12 @@ function migrate_token_customizations() {
 
 function migrate_convert_mytokens_to_customizations(listOfMyTokenFolders, listOfMyTokens) {
 
-    let existingPaths = new Set();
     let easyFolderReference = {};
     window.TOKEN_CUSTOMIZATIONS.forEach(tc => {
         if (tc.tokenType === ItemType.Folder && tc.rootId === RootFolder.MyTokens.id) {
             const fullPath = tc.fullPath();
             easyFolderReference[fullPath] = tc.id;
-            existingPaths.add(fullPath);
-        } else if (tc.tokenType === ItemType.MyToken) {
-            existingPaths.add(tc.fullPath());
-        }
+        } 
     });
     listOfMyTokenFolders.forEach(folder => {
         const fullPath = sanitize_folder_path(`${RootFolder.MyTokens.path}/${folder.folderPath}/${folder.name}`);
@@ -545,7 +584,7 @@ function migrate_convert_mytokens_to_customizations(listOfMyTokenFolders, listOf
 
     // MyToken migration
     console.log("migrate_token_customizations starting to migrate mytokens customizations");
-    listOfMyTokens.forEach(myToken => {
+    listOfMyTokens.forEach(async myToken => {
         let fullPath = sanitize_folder_path(`${RootFolder.MyTokens.path}/${myToken.folderPath}/${myToken.name}`);
         const existing = window.TOKEN_CUSTOMIZATIONS.find(tc => tc.tokenType === ItemType.MyToken && (tc.id === myToken.customizationId || tc.fullPath() === fullPath));
         if (existing) {
@@ -563,7 +602,7 @@ function migrate_convert_mytokens_to_customizations(listOfMyTokenFolders, listOf
                 tokenOptions.alternativeImages = [...myToken.alternativeImages]; //
             }
             else if(myToken.image){
-                tokenOptions.alternativeImages = [parse_img(myToken.image)]
+                tokenOptions.alternativeImages = [await parse_img(myToken.image)]
             }
             delete tokenOptions.image;
             delete tokenOptions.folderpath;
@@ -585,7 +624,24 @@ function migrate_convert_mytokens_to_customizations(listOfMyTokenFolders, listOf
 
 function rollback_token_customizations_migration() {
     try {
+
+        let storeImage = window.globalIndexedDB.transaction([`customizationData`], "readwrite")
+        let objectStore = storeImage.objectStore(`customizationData`)
+
+
+        let deleteRequest = objectStore.delete(`TokenCustomizations`);
+        deleteRequest.onsuccess = (event) => {
+          const objectStoreRequest = objectStore.add({customizationId: `TokenCustomizations`, 'customizationData': []});
+        };
+        deleteRequest.onerror = (event) => {
+          const objectStoreRequest = objectStore.add({customizationId: `TokenCustomizations`, 'customizationData': []});
+        };
+
+
         localStorage.setItem("TokenCustomizations", JSON.stringify([]));
+
+
+
         let playerCustomizations = read_player_token_customizations();
         for (let playerId in playerCustomizations) {
             playerCustomizations[playerId].didMigrate = false;
@@ -603,31 +659,38 @@ function persist_all_token_customizations(customizations, callback) {
         callback = function(){};
     }
     console.log("persist_all_token_customizations starting", customizations, JSON.stringify(customizations));
-    // TODO: send to cloud instead of storing locally
-    localStorage.setItem("TokenCustomizations", JSON.stringify(customizations));
-    window.TOKEN_CUSTOMIZATIONS = customizations;
-    callback(true);
 
-    return; // TODO: remove everything above, and just do this instead
+ 
+            
 
-    let http_api_gw="https://services.abovevtt.net";
-    let searchParams = new URLSearchParams(window.location.search);
-    if(searchParams.has("dev")){
-        http_api_gw="https://jiv5p31gj3.execute-api.eu-west-1.amazonaws.com";
+    let storeImage = globalIndexedDB.transaction([`customizationData`], "readwrite")
+    let objectStore = storeImage.objectStore(`customizationData`)
+
+
+    let deleteRequest = objectStore.delete(`TokenCustomizations`);
+    deleteRequest.onsuccess = (event) => {
+      const objectStoreRequest = objectStore.add({customizationId: `TokenCustomizations`, 'customizationData': customizations});
+    };
+    deleteRequest.onerror = (event) => {
+      const objectStoreRequest = objectStore.add({customizationId: `TokenCustomizations`, 'customizationData': customizations});
+    };
+
+            
+    try{
+        /*stop saving this here in 1.30 - clear out at later date
+        localStorage.setItem("TokenCustomizations", JSON.stringify(customizations));
+        */
+    }    
+    catch(e){
+        console.warn('localStorage saving Token Customizations Failed', e)
     }
 
-    window.ajaxQueue.addRequest({
-        url: `${http_api_gw}/services?action=setTokenCustomizations&userId=todo`, // TODO: figure this out
-        success: function (response) {
-            console.log(`persist_all_token_customizations succeeded`, response);
-            window.TOKEN_CUSTOMIZATIONS = customizations;
-            callback(true);
-        },
-        error: function (errorMessage) {
-            console.warn(`persist_all_token_customizations failed`, errorMessage);
-            callback(false, errorMessage?.responseJSON?.type);
-        }
-    })
+
+
+
+
+    window.TOKEN_CUSTOMIZATIONS = customizations;
+    callback(true);
 }
 
 function persist_token_customization(customization, callback) {
@@ -645,12 +708,29 @@ function persist_token_customization(customization, callback) {
             callback(false, "Invalid Customization");
             return;
         }
-
+        customization.tokenOptions = Object.fromEntries(Object.entries(customization.tokenOptions).filter(([key, value]) => value != 'undefined'))
         let existingIndex = window.TOKEN_CUSTOMIZATIONS.findIndex(c => c.tokenType === customization.tokenType && c.id === customization.id);
         if (existingIndex >= 0) {
             window.TOKEN_CUSTOMIZATIONS[existingIndex] = customization;
         } else {
             window.TOKEN_CUSTOMIZATIONS.push(customization);
+        } 
+
+
+        if(customization.tokenType == 'pc'){
+            if(window.all_token_objects[customization.id]){
+                window.all_token_objects[customization.id].options = {
+                    ...window.all_token_objects[customization.id].options,
+                    ...customization.tokenOptions,
+                }
+                if(customization.tokenOptions.tokenSize) {
+                    window.all_token_objects[customization.id].options = {
+                        ...window.all_token_objects[customization.id].options,
+                        size: customization.tokenOptions.tokenSize * window.CURRENT_SCENE_DATA.hpps,
+                        gridSquares: customization.tokenOptions.tokenSize
+                    }
+                }
+            }
         }
 
         // TODO: call the API with a single object instead of persisting everything
@@ -670,46 +750,50 @@ function fetch_token_customizations(callback) {
     try {
         console.log("fetch_token_customizations starting");
         // TODO: fetch from the cloud instead of storing locally
-        let customMappingData = localStorage.getItem('TokenCustomizations');
-        let parsedCustomizations = [];
-        if (customMappingData !== undefined && customMappingData != null && customMappingData !== "undefined") {
-            console.debug("fetch_token_customizations customMappingData", customMappingData, typeof customMappingData);
-            $.parseJSON(customMappingData).forEach(obj => {
-                try {
-                    let parsed = TokenCustomization.fromJson(obj);
-                    parsedCustomizations.push(parsed);
-                } catch (error) {
-                    // this one failed, but keep trying to parse the others
-                    console.error("fetch_token_customizations failed to parse customization object", obj, error);
+
+          
+        let objectStore = globalIndexedDB.transaction(["customizationData"]).objectStore(`customizationData`)
+        let promises = [];
+        promises.push(new Promise((resolve) => { 
+            let customMappingData = undefined;
+            objectStore.get(`TokenCustomizations`).onsuccess = (event) => {
+                if(event?.target?.result?.customizationData){
+                   customMappingData = event?.target?.result?.customizationData
                 }
-            });
-        }
-        window.TOKEN_CUSTOMIZATIONS = parsedCustomizations;
-        callback(window.TOKEN_CUSTOMIZATIONS);
+                else {
+                    let localCustomizations = localStorage.getItem('TokenCustomizations');
+                    if(localCustomizations != null && localCustomizations !== undefined && localCustomizations !== "undefined")
+                        customMappingData = $.parseJSON(localCustomizations)
+                }
+                let parsedCustomizations = [];
+
+
+                
+                if (customMappingData != undefined) {
+                    console.debug("fetch_token_customizations customMappingData", customMappingData, typeof customMappingData);
+                    customMappingData.forEach(obj => {
+                        try {
+                            let parsed = TokenCustomization.fromJson(obj);
+                            parsedCustomizations.push(parsed);
+                        } catch (error) {
+                            // this one failed, but keep trying to parse the others
+                            console.error("fetch_token_customizations failed to parse customization object", obj, error);
+                        }
+                    });
+                }
+                window.TOKEN_CUSTOMIZATIONS = parsedCustomizations;
+                resolve(true);
+            }
+        }))
+        Promise.all(promises).then((values) => {          
+            callback(window.TOKEN_CUSTOMIZATIONS);
+        })
+
+        
     } catch (error) {
         console.error("fetch_token_customizations failed", error);
         callback(false);
     }
-
-    return; // TODO: remove everything above, and just do this instead
-
-    let http_api_gw="https://services.abovevtt.net";
-    let searchParams = new URLSearchParams(window.location.search);
-    if(searchParams.has("dev")){
-        http_api_gw="https://jiv5p31gj3.execute-api.eu-west-1.amazonaws.com";
-    }
-
-    window.ajaxQueue.addRequest({
-        url: `${http_api_gw}/services?action=getTokenCustomizations&userId=todo`, // TODO: figure this out
-        success: function (response) {
-            console.warn(`persist_token_customizations succeeded`, response);
-            callback(response); // TODO: grabe the actual list of objects from the response
-        },
-        error: function (errorMessage) {
-            console.warn(`persist_token_customizations failed`, errorMessage);
-            callback(false, errorMessage?.responseJSON?.type);
-        }
-    });
 }
 
 // deletes everything within a folder
@@ -722,35 +806,21 @@ function delete_token_customization_by_parent_id(parentId, callback) {
         callback(false);
         return;
     }
+    let tokensToBeDeleted = window.TOKEN_CUSTOMIZATIONS.filter(tc => tc.parentId == parentId);
+    for(i = 0; i < tokensToBeDeleted.length; i++){
+        let statBlockID = tokensToBeDeleted[i].tokenOptions?.statBlock;
+        if(statBlockID){
+            delete window.JOURNAL.notes[statBlockID]
+            if(window.JOURNAL.statBlocks)
+                delete window.JOURNAL.statBlocks[statBlockID]
+            window.JOURNAL.persist();
+        }
+    }
+
 
     window.TOKEN_CUSTOMIZATIONS = window.TOKEN_CUSTOMIZATIONS.filter(tc => tc.parentId !== parentId);
 
     persist_all_token_customizations(window.TOKEN_CUSTOMIZATIONS, callback);
-
-    return; // TODO: remove everything above, and just do this instead
-
-    let http_api_gw="https://services.abovevtt.net";
-    let searchParams = new URLSearchParams(window.location.search);
-    if(searchParams.has("dev")){
-        http_api_gw="https://jiv5p31gj3.execute-api.eu-west-1.amazonaws.com";
-    }
-
-    window.ajaxQueue.addRequest({
-        url: `${http_api_gw}/services?action=deleteTokenCustomizations&parentId=${parentId}&userId=todo`, // TODO: figure this out
-        type: "DELETE",
-        success: function (response) {
-            console.warn(`delete_token_customization succeeded`, response);
-            let index = window.TOKEN_CUSTOMIZATIONS.findIndex(tc => tc.tokenType === customization.tokenType && tc.id === customization.id);
-            if (index >= 0) {
-                window.TOKEN_CUSTOMIZATIONS.splice(index, 1);
-            }
-            callback(true);
-        },
-        error: function (errorMessage) {
-            console.warn(`delete_token_customization failed`, errorMessage);
-            callback(false, errorMessage?.responseJSON?.type);
-        }
-    });
 }
 
 function delete_token_customization_by_type_and_id(itemType, id, callback) {
@@ -758,36 +828,18 @@ function delete_token_customization_by_type_and_id(itemType, id, callback) {
         callback = function(){};
     }
     let index = window.TOKEN_CUSTOMIZATIONS.findIndex(tc => tc.tokenType === itemType && tc.id === id);
+
     if (index >= 0) {
+        let statBlockID = window.TOKEN_CUSTOMIZATIONS[index]?.tokenOptions?.statBlock;
+        if(statBlockID){
+            delete window.JOURNAL.notes[statBlockID]
+            if(window.JOURNAL.statBlocks)
+                delete window.JOURNAL.statBlocks[statBlockID]
+            window.JOURNAL.persist();
+        }
         window.TOKEN_CUSTOMIZATIONS.splice(index, 1);
     }
     persist_all_token_customizations(window.TOKEN_CUSTOMIZATIONS, callback);
-
-    return; // TODO: remove everything above, and just do this instead
-
-    let http_api_gw="https://services.abovevtt.net";
-    let searchParams = new URLSearchParams(window.location.search);
-    if(searchParams.has("dev")){
-        http_api_gw="https://jiv5p31gj3.execute-api.eu-west-1.amazonaws.com";
-    }
-
-    window.ajaxQueue.addRequest({
-        url: `${http_api_gw}/services?action=deleteTokenCustomization&id=${id}&tokenType=${itemType}&userId=todo`, // TODO: figure this out
-        type: "DELETE",
-        success: function (response) {
-            console.warn(`delete_token_customization succeeded`, response);
-            let index = window.TOKEN_CUSTOMIZATIONS.findIndex(tc => tc.tokenType === customization.tokenType && tc.id === customization.id);
-            if (index >= 0) {
-                window.TOKEN_CUSTOMIZATIONS.splice(index, 1);
-            }
-            callback(true);
-        },
-        error: function (errorMessage) {
-            console.warn(`delete_token_customization failed`, errorMessage);
-            callback(false, errorMessage?.responseJSON?.type);
-        }
-    });
-
 }
 
 function find_customization_for_placed_token(placedToken) {
@@ -818,14 +870,16 @@ function rebuild_ddb_npcs(redrawList = false) {
     // Unfortunately, window.ddbConfigJson.raceGroups do not match the portrait ids. Those must be for monsters?
     // Anyway, this is how I collected the race ids. Navigate to https://www.dndbeyond.com/races and enter the following into the console
     /*
-    var playableRaces = [];
+    let playableRaces = [];
     $("a.listing-card__link").each(function() {
         playableRaces.push( $(this).attr("href").match(/[^\/]+$/)[0] );
     })
     JSON.stringify(playableRaces)
     */
     // then copy the output and paste it into the JSON.parse here. Everything else is taken care of
-    const playableRaceIds = JSON.parse('["16-dragonborn","13-dwarf","3-elf","18-gnome","20-half-elf","14-halfling","2-half-orc","1-human","7-tiefling","410992-leonin","410993-satyr","883673-owlin","1026377-aarakocra","1026378-aasimar","1026379-air-genasi","1026380-bugbear","1026381-centaur","1026382-changeling","1026383-deep-gnome","1026384-duergar","1026385-earth-genasi","1026386-eladrin","814913-fairy","1026387-firbolg","1026388-fire-genasi","1026389-githyanki","1026390-githzerai","1026391-goblin","1026392-goliath","814914-harengon","1026393-hobgoblin","1026394-kenku","1026395-kobold","1026396-lizardfolk","1026397-minotaur","1026398-orc","1026399-satyr","1026400-sea-elf","1026401-shadar-kai","1026402-shifter","1026403-tabaxi","1026404-tortle","1026405-triton","1026406-water-genasi","1026407-yuan-ti","24-aasimar","32-bugbear","25-firbolg","33-goblin","34-hobgoblin","28-kenku","516426-kobold","29-lizardfolk","516433-orc","30-tabaxi","31-triton","37-yuan-ti-pureblood","706719-lineages","40-feral-tiefling","41-tortle","260666-changeling","260720-kalashtar","260758-shifter","260828-warforged","1121694-astral-elf","1121695-autognome","1121696-giff","1121697-hadozee","1121698-plasmoid","1121699-thri-kreen","25294-gith","67624-centaur","67607-loxodon","67599-minotaur","67585-simic-hybrid","67582-vedalken","169862-verdan","229754-locathah","1214237-kender","302384-grung","4-aarakocra","23-genasi","22-goliath"]');
+
+    //"1121697-hadozee" is removed due to ddb removing the images.
+    const playableRaceIds = JSON.parse('["1751436-dwarf","1751437-elf","1751440-halfling","1751441-human","1751434-aasimar","1751435-dragonborn","1751438-gnome","1751439-goliath","1751442-orc","1751443-tiefling","1026377-aarakocra","1026378-aasimar","1026379-air-genasi","1026380-bugbear","1026381-centaur","1026382-changeling","1026383-deep-gnome","1026384-duergar","1026385-earth-genasi","1026386-eladrin","814913-fairy","1026387-firbolg","1026388-fire-genasi","1026389-githyanki","1026390-githzerai","1026391-goblin","1026392-goliath","814914-harengon","1026393-hobgoblin","1026394-kenku","1026395-kobold","1026396-lizardfolk","1026397-minotaur","1026398-orc","1026399-satyr","1026400-sea-elf","1026401-shadar-kai","1026402-shifter","1026403-tabaxi","1026404-tortle","1026405-triton","1026406-water-genasi","1026407-yuan-ti","1214237-kender","1121694-astral-elf","1121695-autognome","1121696-giff","1121698-plasmoid","1121699-thri-kreen","883673-owlin","706719-lineages","410992-leonin","410993-satyr","260666-changeling","260720-kalashtar","260758-shifter","260828-warforged","169862-verdan","67624-centaur","67607-loxodon","67599-minotaur","67585-simic-hybrid","67582-vedalken","40-feral-tiefling","41-tortle","229754-locathah","302384-grung","25294-gith","24-aasimar","32-bugbear","25-firbolg","33-goblin","34-hobgoblin","28-kenku","516426-kobold","29-lizardfolk","516433-orc","30-tabaxi","31-triton","37-yuan-ti-pureblood","4-aarakocra","23-genasi","22-goliath","16-dragonborn","13-dwarf","3-elf","18-gnome","20-half-elf","14-halfling","2-half-orc","1-human","7-tiefling","1726258-bearfolk","1726259-darakhul","1726260-erina","1726261-quickstep","1726262-ratatosk","1726263-ravenfolk","1726264-satarre","1726265-shade","1726266-shadow-goblin","1726267-umbral-human","1699132-the-disembodied","1699133-wechselkind","1592465-cervan","1592466-corvum","1592467-gallus","1592468-hedge","1592469-jerbeen","1592470-luma","1592471-mapach","1592472-raptor","1592473-strig","1592474-vulpin","1816644-barding","1816645-dwarf","1816646-elf","1816647-hobbit","1816648-man-of-bree","1816649-ranger-of-the-north"]');
 
     const uglyCapitalization = function(str) {
         let capitalizeNext = true;
@@ -845,7 +899,7 @@ function rebuild_ddb_npcs(redrawList = false) {
 
     // process the list of ids into objects that can be parsed and matched to window.ddbPortraits
     // { "Aarakocra": [4, 1026377], "Human": [1] } // legacy and non-legacy get merged into the same list of portraits. I manually merge orc and orc-of-exandria as well
-    var playableRaces = {};
+    let playableRaces = {};
     playableRaceIds.forEach(id => {
         let portraitId = parseInt(id);
         let name = uglyCapitalization(id.replace(`${portraitId}-`, ""));

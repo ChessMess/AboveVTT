@@ -1,38 +1,90 @@
-var abovevtt_version = '0.74';
-
 /**
  * Before the page refreshes perform the innards
  * @param {Event} event
  */
 window.onbeforeunload = function(event)
 {
-	console.log("refreshing page, storing zoom first");
-	add_zoom_to_storage();
-	window.PeerManager.send(PeerEvent.goodbye());
+	if (is_abovevtt_page()) {
+		tabCommunicationChannel.postMessage({
+      		msgType: 'removeObserver'
+    	})
+		console.log("refreshing page, storing zoom first");
+		add_zoom_to_storage();
+		window.PeerManager.send(PeerEvent.goodbye());
+
+	}
 };
 
-/**
- * Parses the given URL for GoogleDrive or Dropbox semantics and returns an updated URL.
+
+
+/** Parses the given URL for GoogleDrive or Dropbox semantics and returns an updated URL.
  * @param {String} url to parse
- * @returns String
- */
-function parse_img(url){
-	if (typeof url !== "string") {
-		return "";
-	}
-	retval = url;
-	if(retval.startsWith("data:")){
-		alert("You cannot use urls starting with data:");
-		return "";
-	}
-	if (retval.startsWith("https://drive.google.com") && retval.indexOf("uc?id=") < 0) {
-		retval = 'https://drive.google.com/uc?id=' + retval.split('/')[5];
-	} else if (retval.includes("dropbox.com") && retval.includes("?dl=")) {
-		retval = retval.split("?dl=")[0] + "?raw=1";
-	}
-	return retval;
+ * @return {String} a sanitized and possibly modified url to help with loading maps */
+function parse_img(url) {
+		let retval = url;
+		if (typeof retval !== "string") {
+			console.log("parse_img is converting", url, "to an empty string");
+			retval = "";
+		} else if (retval.trim().startsWith("data:")) {
+			console.warn("parse_img is removing a data url because those are not allowed"); 
+			retval = "";
+		} else if (retval.includes("https://drive.google.com") && !retval.match(/id=([a-zA-Z0-9_-]+)/g)) {
+			const parsed = 'https://drive.google.com/thumbnail?id=' + retval.split('/')[5] +'&sz=w3000';
+			retval = parsed;
+			console.log("parse_img is converting", url, "to", retval);
+			return retval;		
+		} 
+		else if (retval.startsWith("https://drive.google.com") || (retval.includes("https://drive.usercontent.google.com")) && retval.match(/id=([a-zA-Z0-9_-]+)/g)) {
+			const parsed = 'https://drive.google.com/thumbnail?id=' + retval.matchAll(/id=([a-zA-Z0-9_-]+)/g).next().value[1] +'&sz=w3000';
+			retval = parsed;
+			console.log("parse_img is converting", url, "to", retval);
+			return retval;		
+		} 
+		else if(retval.startsWith("https://www.googleapis.com/drive/v3/files/")){ // fix due to 1.5/1.6 beta 
+			const fileid = retval.split('files/')[1].split('?')[0];
+			const parsed = 'https://drive.google.com/thumbnail?id=' + fileid +'&sz=w3000';
+			retval = parsed;
+			return retval;
+		}
+		else if(retval.includes("dropbox.com")){
+			const splitUrl = url.split('dropbox.com');
+			const parsed = `https://dl.dropboxusercontent.com${splitUrl[splitUrl.length-1]}`
+			console.log("parse_img is converting", url, "to", parsed);
+			retval = parsed;
+		}
+		else if(retval.includes("https://1drv.ms/"))
+		{
+			if(retval.split('/')[4].length == 1){
+	      retval = retval;
+	    }
+	    else{
+	      retval = "https://api.onedrive.com/v1.0/shares/u!" + btoa(url) + "/root/content";
+	    }
+		}
+		if(retval.includes("discordapp.com")){
+			retval = update_old_discord_link(retval)
+		}
+		return retval;	
 }
 
+function update_old_discord_link(link){
+  if(link == 'https://cdn.discordapp.com/attachments/1083353621778923581/1110550133134852206/lightbulb.png'){
+    link = 'https://www.googleapis.com/drive/v3/files/1_QnkvmGct2dzeu-pBO9ofT-828pWvCcn?alt=media&key=AIzaSyBcA_C2gXjTueKJY2iPbQbDvkZWrTzvs5I'
+  }
+  else if(link == "https://cdn.discordapp.com/attachments/1083353621778923581/1083353624891105290/star.png"){
+   link = 'https://drive.google.com/uc?id=1F868fVhQnzFALTcnEIXUDeAl3UKZccKA';
+  }
+  else if(link == "https://cdn.discordapp.com/attachments/1083353621778923581/1083353624652038215/skull.png"){
+    link = "https://drive.google.com/uc?id=1of0nmVMh8rnt9pz6iri9gtq-mCQmgCWA"
+  }
+  else if(link == "https://cdn.discordapp.com/attachments/1083353621778923581/1083353625113399376/mappin.png"){
+    link = "https://drive.google.com/uc?id=1excaNtaLfn_Hj5EHuH-h8iimpzC36i0M"
+  }
+  else if(link == "https://cdn.discordapp.com/attachments/1083353621778923581/1148091041589756005/flame1.gif"){
+    link = "https://drive.google.com/uc?id=1eWHXQsHloLuocYOuHnvvd0zymZQMH7sm"
+  }
+  return link;
+}
 /**
  * Waits for a global variable to be set.
  * Then triggers the callback function.
@@ -40,7 +92,7 @@ function parse_img(url){
  * @param {Function} callback
  */
 function whenAvailable(name, callback) {
-    var interval = 10; // ms
+    let interval = 10; // ms
     window.setTimeout(function() {
         if (window[name]) {
             callback(window[name]);
@@ -55,9 +107,9 @@ function whenAvailable(name, callback) {
  * @returns String
  */
 function getRandomColorOLD() {
-	var letters = '0123456789ABCDEF';
-	var color = '#';
-	for (var i = 0; i < 6; i++) {
+	let letters = '0123456789ABCDEF';
+	let color = '#';
+	for (let i = 0; i < 6; i++) {
 		color += letters[Math.floor(Math.random() * 16)];
 	}
 	return color;
@@ -69,7 +121,7 @@ function getRandomColorOLD() {
  */
 function uuid() {
 	return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-		var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+		let r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
 		return v.toString(16);
 	});
 }
@@ -104,8 +156,8 @@ function clamp (number, min, max) {
  * @returns String | false
  */
 function youtube_parser(url) {
-	var regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
-	var match = url.match(regExp);
+	let regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+	let match = url.match(regExp);
 	return (match && match[7].length == 11) ? match[7] : false;
 }
 
@@ -119,7 +171,14 @@ function validateUrl(value) {
 }
 
 const MAX_ZOOM = 5
-const MIN_ZOOM = 0.1
+const MIN_ZOOM = 0.001
+
+
+const debounce_scroll_event = mydebounce(function(){
+		setTimeout(function(){
+			$(window).off('scroll.projectorMode').on("scroll.projectorMode", projector_scroll_event);
+		}, 200)	
+}, 200)
 
 /**
  * Changes the zoom level.
@@ -127,27 +186,49 @@ const MIN_ZOOM = 0.1
  * @param {Number} x zoom center horizontal
  * @param {Number} y zoom center vertical
  */
-function change_zoom(newZoom, x, y) {
+function change_zoom(newZoom, x, y, reset = false) {
 	console.group("change_zoom")
 	console.log("zoom", newZoom, x , y)
-	var zoomCenterX = x || $(window).width() / 2
-	var zoomCenterY = y || $(window).height() / 2
-	// 200 is the size of the black area to the left and top of the map
-	var centerX = Math.round((($(window).scrollLeft() + zoomCenterX) - 200) * (1.0 / window.ZOOM));
-	var centerY = Math.round((($(window).scrollTop() + zoomCenterY) - 200) * (1.0 / window.ZOOM));
+	let zoomCenterX = x || $(window).width() / 2
+	let zoomCenterY = y || $(window).height() / 2
+	// window.VTTMargin is the size of the black area to the left and top of the map
+	let centerX = Math.round((($(window).scrollLeft() + zoomCenterX) - window.VTTMargin) * (1.0 / window.ZOOM));
+	let centerY = Math.round((($(window).scrollTop() + zoomCenterY) - window.VTTMargin) * (1.0 / window.ZOOM));
 	window.ZOOM = newZoom;
-	var pageX = Math.round(centerX * window.ZOOM - zoomCenterX) + 200;
-	var pageY = Math.round(centerY * window.ZOOM - zoomCenterY) + 200;
+	let pageX = Math.round(centerX * window.ZOOM - zoomCenterX) + window.VTTMargin;
+	let pageY = Math.round(centerY * window.ZOOM - zoomCenterY) + window.VTTMargin;
 
-	//Set scaling token names CSS variable this variable can be used with anything in #tokens
-	$("#tokens").get(0).style.setProperty("--font-size-zoom", Math.max(12 * Math.max((3 - window.ZOOM), 0), 8.5) + "px");
+	if($('#projector_zoom_lock.enabled > [class*="is-active"]').length>0 && window.DM)
+		$(window).off('scroll.projectorMode')
+	
 
-	$("#VTT").css("transform", "scale(" + window.ZOOM + ")");
-	set_default_vttwrapper_size()
-	$(window).scrollLeft(pageX);
-	$(window).scrollTop(pageY);
-	$("body").css("--window-zoom", window.ZOOM)
+
+	if(reset != true){
+		$(window).scrollLeft(pageX);
+		$(window).scrollTop(pageY);	
+	}
+
+	$('#VTTWRAPPER').css({
+		"--window-zoom": window.ZOOM,
+		"--font-size-zoom": Math.max(12 * Math.max((3 - window.ZOOM), 0), 8.5) + "px"
+	})
+	set_default_vttwrapper_size();
+	if(reset == true){
+		$("#scene_map")[0].scrollIntoView({
+			behavior: 'auto',
+			block: 'center',
+			inline: 'center'
+		});		
+		if($('#hide_rightpanel').hasClass('point-right') && $('.ct-sidebar.ct-sidebar--hidden').length == 0)
+			$(window).scrollLeft(window.scrollX + 170); // 170 half of game log			
+	}
+
+
 	$(".peerCursorPosition").css("transform", "scale(" + 1/window.ZOOM + ")");
+	if($('#projector_zoom_lock.enabled > [class*="is-active"]').length>0 && window.DM)
+		debounce_scroll_event()
+	
+	
 	console.groupEnd()
 }
 
@@ -161,18 +242,20 @@ function add_zoom_to_storage() {
 	if(window.ZOOM !== get_reset_zoom()) {
 		const zooms = JSON.parse(localStorage.getItem('zoom')) || [];
 		const zoomIndex = zooms.findIndex(zoom => zoom.title === window.CURRENT_SCENE_DATA.title);
+		const centerView = center_of_view(); 
+		const sidebarSize = ($('#hide_rightpanel.point-right').length>0 ? 340 : 0);
 		if (zoomIndex !== -1) {
 			zooms[zoomIndex].zoom = window.ZOOM;
-			zooms[zoomIndex].leftOffset = Math.round($(window).scrollLeft());
-			zooms[zoomIndex].topOffset = Math.round($(window).scrollTop());
+			zooms[zoomIndex].leftOffset = window.scrollX + window.innerWidth/2 - sidebarSize/2;
+			zooms[zoomIndex].topOffset = window.scrollY + window.innerHeight/2;
 		}
 		else{
 			// zoom doesn't exist
 			zooms.push({
 				"title": window.CURRENT_SCENE_DATA.title,
 				"zoom":window.ZOOM,
-				"leftOffset": Math.round($(window).scrollLeft()),
-				"topOffset": Math.round($(window).scrollTop())
+				"leftOffset": window.scrollX + window.innerWidth/2 - sidebarSize/2,
+				"topOffset": window.scrollY + window.innerHeight/2
 			});
 		}
 		localStorage.setItem('zoom', JSON.stringify(zooms));
@@ -187,8 +270,8 @@ function add_zoom_to_storage() {
 function set_default_vttwrapper_size() {
 	$("#VTTWRAPPER").width($("#scene_map").width() * window.CURRENT_SCENE_DATA.scale_factor * window.ZOOM + 1400);
 	$("#VTTWRAPPER").height($("#scene_map").height() * window.CURRENT_SCENE_DATA.scale_factor * window.ZOOM + 1400);
-	$("#black_layer").width($("#scene_map").width() * window.CURRENT_SCENE_DATA.scale_factor * window.ZOOM + 2000);
-	$("#black_layer").height($("#scene_map").height() * window.CURRENT_SCENE_DATA.scale_factor * window.ZOOM + 2000);
+	$("#black_layer").width(($("#scene_map").width()) * window.CURRENT_SCENE_DATA.scale_factor * window.ZOOM + 2000 + window.VTTMargin );
+	$("#black_layer").height(($("#scene_map").height()) * window.CURRENT_SCENE_DATA.scale_factor * window.ZOOM + 2000 + window.VTTMargin );
 }
 
 /**
@@ -209,33 +292,49 @@ function remove_zoom_from_storage() {
 */
 function apply_zoom_from_storage() {
 	console.group("apply_zoom_from_storage");
-	const zoomState = localStorage.getItem("zoom");
-	if (zoomState) {
-		const zooms = JSON.parse(zoomState);
-		const zoomIndex = zooms.findIndex(zoom => zoom.title === window.CURRENT_SCENE_DATA.title);
-		if(zoomIndex !== -1) {
-			console.log("restoring zoom level", zooms[zoomIndex]);
-			change_zoom(
-				zooms[zoomIndex].zoom,
-				undefined,
-				undefined,
-				false)
-			// TODO: this bit doesn't work
-			$(window).scrollLeft(zooms[zoomIndex].leftOffset);
-			$(window).scrollTop(zooms[zoomIndex].topOffset);
+	const sidebarSize = ($('#hide_rightpanel.point-right').length>0 ? 340 : 0);
+	let initial_x = isNaN(parseInt(window.CURRENT_SCENE_DATA.initial_x)) ? undefined : window.CURRENT_SCENE_DATA.initial_x - window.innerWidth/2 + sidebarSize/2;
+	let initial_y =  isNaN(parseInt(window.CURRENT_SCENE_DATA.initial_y)) ? undefined : window.CURRENT_SCENE_DATA.initial_y - window.innerHeight/2;
+	let initial_zoom =  isNaN(parseInt(window.CURRENT_SCENE_DATA.initial_zoom)) ? undefined : window.CURRENT_SCENE_DATA.initial_zoom;
 
-		}
-		else{
-			// Zooms in storage but not for this scene
-			console.log("scene does not have a zoom stored")
-			reset_zoom()
-		}
+	if(initial_zoom != undefined){
+		change_zoom(initial_zoom)
+		if(initial_x != undefined && initial_y != undefined)
+			window.scrollTo(initial_x, initial_y)
 	}
 	else{
-		// no zooms in storage
-		console.log("no zooms in storage")
-		reset_zoom()
+		const zoomState = localStorage.getItem("zoom");
+		if (zoomState != null) {
+			const zooms = JSON.parse(zoomState);
+			const zoomIndex = zooms.findIndex(zoom => zoom.title === window.CURRENT_SCENE_DATA.title);
+			if(zoomIndex !== -1) {
+				console.log("restoring zoom level", zooms[zoomIndex]);
+				change_zoom(zooms[zoomIndex].zoom)
+
+				if(initial_x != undefined && initial_y != undefined)
+					window.scrollTo(initial_x, initial_y)
+				else
+					window.scrollTo(zooms[zoomIndex].leftOffset - window.innerWidth/2 + sidebarSize/2, zooms[zoomIndex].topOffset - window.innerHeight/2)
+			}
+			else{
+				// Zooms in storage but not for this scene
+				console.log("scene does not have a zoom stored")
+				reset_zoom()
+				if(initial_x != undefined && initial_y != undefined)
+					window.scrollTo(initial_x, initial_y)
+			}
+		}
+		else{
+			// no zooms in storage
+			console.log("no zooms in storage")
+			reset_zoom()
+			if(initial_x != undefined && initial_y != undefined)
+				window.scrollTo(initial_x, initial_y)
+		}
 	}
+
+
+	
 	console.groupEnd()
 }
 
@@ -253,9 +352,10 @@ function decrease_zoom() {
 * @return {Number}
 */
 function get_reset_zoom() {
+	const sidebar_open = ($('#hide_rightpanel').hasClass('point-right') && $('.ct-sidebar.ct-sidebar--hidden').length == 0) ? 340 : 0;
 	const wH = $(window).height();
 	const mH = $("#scene_map").height()*window.CURRENT_SCENE_DATA.scale_factor;
-	const wW = $(window).width();
+	const wW = $(window).width()-sidebar_open;
 	const mW = $("#scene_map").width()*window.CURRENT_SCENE_DATA.scale_factor;
 
 	console.log(wH, mH, wW, mW);
@@ -271,12 +371,9 @@ function reset_zoom() {
 	console.log("zooming on centre of map");
 	// change_zoom is great for mouse zooming, but tricky when just hitting the centre of the map
 	// so don't give it any x/y and just use the scrollIntoView center instead
-	change_zoom(get_reset_zoom(), undefined, undefined);
-	$("#scene_map")[0].scrollIntoView({
-		behavior: 'auto',
-		block: 'center',
-		inline: 'center'
-	});
+	change_zoom(get_reset_zoom(), undefined, undefined, true);
+
+
 	// Don't store any zoom for this scene as we default to map fit on load
 	remove_zoom_from_storage();
 	console.groupEnd();
@@ -300,7 +397,7 @@ function getPlayerIDFromSheet(sheet_url) {
 	if(sheet_url) {
 		let urlSplit = sheet_url.split("/");
 		if(urlSplit.length > 0) {
-			playerID = urlSplit[urlSplit.length - 1];
+			playerID = urlSplit[urlSplit.length - 1].split('?')[0];
 		}
 	}
 	return playerID;
@@ -315,15 +412,16 @@ window.YTTIMEOUT = null;
 function map_load_error_cb(e) {
 	console.log(e);
 	let src = e.currentTarget.getAttribute("src");
+	$('#loadingStyles').remove();
 	console.error("map_load_error_cb src", src, e);
 	if (typeof src === "string") {
 		let specificMessage = `Please make sure the image is accessible to anyone on the internet.`;
-		if (src.includes("drive.google")) {
-			specificMessage = `It looks like you're using a Google Drive image. Please make sure the "Get link" modal says "Anyone on the internet with this link can view".`;
+		if (src.includes("drive.google") || window.CURRENT_SCENE_DATA.map.includes("drive.google")) {
+			showGoogleDriveWarning();
 		}
-		if (confirm(`Map could not be loaded!\n${specificMessage}\nYou may also need to disable ad blockers.\nWould you like to try loading the image in a separate tab to verify that it's accessible? If you are currently logged in to google, you will need to log out or open the image in a different browser or an incognito window to truly test it.`)) {
+		else if (confirm(`Map could not be loaded!\n${specificMessage}\nYou may also need to disable ad blockers.\nWould you like to try loading the image in a separate tab to verify that it's accessible? If you are currently logged in to google, you will need to log out or open the image in a different browser or an incognito window to truly test it.`)) {
 			if (window.DM || confirm(`SPOILER ALERT!!!\nIf you click OK, you might see the entire map without fog of war. However, the map isn't loading at all so you will probably see a broken link. Are you sure you want to test this image?`)) {
-				window.open(src, '_blank');
+				window.open(window.CURRENT_SCENE_DATA.map, '_blank');
 			}
 		}
 	}
@@ -334,6 +432,7 @@ function map_load_error_cb(e) {
  * This removes it. See `Load.js` for the injection of the overlay.
  */
 function remove_loading_overlay() {
+	console.debug("remove_loading_overlay")
 	$("#loading_overlay").animate({ "opacity": 0 }, 1000, function() {
 		$("#loading_overlay").hide();
 	});
@@ -348,80 +447,91 @@ function remove_loading_overlay() {
  * @param {Number} height of the map
  * @param {Function} callback trigged after map is loaded
  */
-function load_scenemap(url, is_video = false, width = null, height = null, callback = null) {
-
+async function load_scenemap(url, is_video = false, width = null, height = null, UVTTFile = false, callback = null) {
+	clearInterval(window.YTINTERVAL);
 	$("#scene_map_container").toggleClass('map-loading', true);
 
-	remove_loading_overlay();
-
-	$("#scene_map").remove();
+	$("[id='scene_map']").remove();
 
 	if (window.YTTIMEOUT != null) {
 		clearTimeout(window.YTTIMEOUT);
 		window.YTTIMEOUT = null;
 	}
-
+	$("#youtube_controls_button").css('visibility', 'hidden');
 	console.log("is video? " + is_video);
 	if (url.includes("youtube.com") || url.includes("youtu.be")) {
+		$("#youtube_controls_button").css('visibility', '');
 		$("#scene_map_container").toggleClass('video', true);
 		if (width == null) {
 			width = 1920;
 			height = 1080;
 		}
 
-		var newmap = $('<div style="width:' + width + 'px;height:' + height + 'px;position:absolute;top:0;left:0;z-index:10" id="scene_map" />');
-		$("#scene_map_container").append(newmap);
+		let newmap = $('<div style="width:' + width + 'px;height:' + height + 'px;position:absolute;top:0;left:0;z-index:10" id="scene_map" />');
+		$("#map_items").append(newmap);
 		videoid = youtube_parser(url);
 		window.YTPLAYER = new YT.Player('scene_map', {
 			width: width,
 			height: height,
 			videoId: videoid,
-			playerVars: { 'autoplay': 1, 'controls': 0 },
+			playerVars: { 'autoplay': 0, 'controls': 1, 'rel': 0 },
 			events: {
-				'onStateChange': function(event) {  if (event.data == 0) window.YTPLAYER.seekTo(0); },
-				'onReady': function(e) { window.YTPLAYER.setVolume($("#youtube_volume").val()); }
+				'onStateChange': function(event) {  
+					if (event.data == 0) window.YTPLAYER.seekTo(0); 
+				},
+				'onReady': function(e) { 
+					let ytvolume=window.MIXER?.state()?.animatedMap?.volume != undefined ? window.MIXER?.state()?.animatedMap?.volume : $("#youtube_volume").val();
+					if(ytvolume)
+						e.target.setVolume(ytvolume); 
+					else
+						e.target.setVolume(25);
+					e.target.playVideo();
+
+	        const loopTime = window.YTPLAYER.playerInfo.duration - 0.15;
+
+	        window.YTINTERVAL = setInterval(function (){
+	          const current_time = window.YTPLAYER.getCurrentTime();
+	          if (current_time > loopTime) {
+	            	window.YTPLAYER.seekTo(0);
+								window.YTPLAYER.playVideo();
+	          }
+	        }, 10);
+				}			
 			}
 		});
 
 
-		let smooth = function() {
-			if (window.YTPLAYER.playerInfo.playerState != 1){ // Something went wrong. tries to reset
-				window.YTPLAYER.seekTo(0);
-				window.YTPLAYER.playVideo();
-				window.YTTIMEOUT = setTimeout(smooth, (window.YTPLAYER.playerInfo.duration - 1.6) * 1000);
-				return;
-			}
-			remaining = window.YTPLAYER.playerInfo.duration - window.YTPLAYER.playerInfo.currentTime;
-			if (remaining < 2) { // We should be able to just skip on the last second
-				window.YTPLAYER.seekTo(0);
-				window.YTTIMEOUT = setTimeout(smooth, (window.YTPLAYER.playerInfo.duration - 1.6) * 1000);
-			}
-			else {
-				window.YTTIMEOUT = setTimeout(smooth, (remaining - 1.6) * 1000);
-			}
-		};
 
-		window.YTTIMEOUT = setTimeout(smooth, 5000);
 		callback();
 		$("#scene_map_container").toggleClass('map-loading', false);
 	}
 	else if (is_video === "0" || !is_video) {
 		$("#scene_map_container").toggleClass('video', false);
-		let newmap = $("<img id='scene_map' src='scene_map' style='position:absolute;top:0;left:0;z-index:10'>");
-		newmap.attr("src", url);
+
+		let newmap;
+
+		
+
+		if(UVTTFile && width != null){		
+			newmap = $(`<img id='scene_map' src='${url}' style='position:absolute;top:0;left:0;z-index:10'>`);		
+			newmap.width(width);
+			newmap.height(height);		
+		}
+		else{
+			url = await getGoogleDriveAPILink(url)
+			newmap = $(`<img id='scene_map' src='${url}' style='position:absolute;top:0;left:0;z-index:10'>`);
+		}
+
 
 		newmap.on("error", map_load_error_cb);
-		if (width != null) {
-			newmap.width(width);
-			newmap.height(height);
-		}
+
 		newmap.on("load", () => {
 			$("#scene_map_container").toggleClass('map-loading', false);
 		});
 		if (callback != null) {
 			newmap.on("load", callback);
 		}
-		$("#scene_map_container").append(newmap);
+		$("#map_items").append(newmap);
 
 
 	}
@@ -432,13 +542,42 @@ function load_scenemap(url, is_video = false, width = null, height = null, callb
 		if (width != null) {
 			newmapSize = 'width: ' + width + 'px; height: ' + height + 'px;';
 		}
-
-		var newmap = $(`<video style="${newmapSize} position: absolute; top: 0; left: 0;z-index:10" playsinline autoplay loop onloadstart="this.volume=${$("#youtube_volume").val()/100}" id="scene_map" src="${url}" />`);
-		newmap.on("loadeddata", callback);
-		newmap.on("error", map_load_error_cb);
+		let videoVolume = window.MIXER?.state()?.animatedMap?.volume != undefined ? window.MIXER?.state()?.animatedMap?.volume : $("#youtube_volume").val() != undefined ? $("#youtube_volume").val() : 0.25;
+		
+		if(window.DM){
+			videoVolume = videoVolume/100 * $("#master-volume input").val();
+		}
+		else{
+			videoVolume = videoVolume * $("#master-volume input").val()
+		}
+		if(url.includes('google')){
+	    if (url.startsWith("https://drive.google.com") && url.indexOf("uc?id=") < 0 && url.indexOf("thumbnail?id=") < 0 ) {
+	        const parsed = 'https://drive.google.com/uc?id=' + url.split('/')[5];
+	        const fileid = parsed.split('=')[1];
+	        url = `https://www.googleapis.com/drive/v3/files/${fileid}?alt=media&key=AIzaSyBcA_C2gXjTueKJY2iPbQbDvkZWrTzvs5I`;     
+	    } 
+	    else if (url.startsWith("https://drive.google.com") && url.indexOf("uc?id=") > -1) {
+	        const fileid = url.split('=')[1];
+	        url = `https://www.googleapis.com/drive/v3/files/${fileid}?alt=media&key=AIzaSyBcA_C2gXjTueKJY2iPbQbDvkZWrTzvs5I`;   
+	    }
+	    else if (url.startsWith("https://drive.google.com") && url.indexOf("thumbnail?id=") > -1) {
+	        const fileid = url.split('=')[1].split('&')[0];
+	        url = `https://www.googleapis.com/drive/v3/files/${fileid}?alt=media&key=AIzaSyBcA_C2gXjTueKJY2iPbQbDvkZWrTzvs5I`;   
+	    }
+		}
+		else if(url.includes('onedrive')){
+	    url = url.replace('embed?', 'download?');
+		}
+		else if(url.includes("https://1drv.ms/"))
+		{
+		  url = "https://api.onedrive.com/v1.0/shares/u!" + btoa(url) + "/root/content";
+		}
+		let newmap = $(`<video style="${newmapSize} position: absolute; top: 0; left: 0;z-index:10" playsinline autoplay loop data-volume='0.25' onloadstart="this.volume=${videoVolume/100}" id="scene_map" src="${url}" />`);
+		newmap.off("loadeddata").one("loadeddata", callback);
+		newmap.off("error").on("error", map_load_error_cb);
 
 		if (width == null) {
-			newmap.on("loadedmetadata", function (e) {
+			newmap.off("loadedmetadata").on("loadedmetadata", function (e) {
 				console.log("video width:", this.videoWidth);
 				console.log("video height:", this.videoHeight);
 				$('#scene_map').width(this.videoWidth);
@@ -449,10 +588,12 @@ function load_scenemap(url, is_video = false, width = null, height = null, callb
 		else{
 			$("#scene_map_container").toggleClass('map-loading', false);
 		}
-		$("#scene_map_container").append(newmap);
+		$("#map_items").append(newmap);
 
 	}
 
+	$('#scene_map ~ #scene_map').remove()
+	
 }
 
 /**
@@ -491,12 +632,12 @@ function set_pointer(data, dontscroll = false) {
 	// Calculate pageX and pageY and scroll there!
 
 	if(!dontscroll){
-		var pageX = Math.round(data.x * window.ZOOM - ($(window).width() / 2));
-		var pageY = Math.round(data.y * window.ZOOM - ($(window).height() / 2));
-		var sidebarSize = ($('#hide_rightpanel.point-right').length>0 ? 340 : 0);
+		let pageX = Math.round(data.x * window.ZOOM - ($(window).width() / 2));
+		let pageY = Math.round(data.y * window.ZOOM - ($(window).height() / 2));
+		let sidebarSize = ($('#hide_rightpanel.point-right').length>0 ? 340 : 0);
 		$("html,body").animate({
-			scrollTop: pageY + 200,
-			scrollLeft: pageX + 200 + sidebarSize/2,
+			scrollTop: pageY + window.VTTMargin,
+			scrollLeft: pageX + window.VTTMargin + sidebarSize/2,
 		}, 500);
 	}
 }
@@ -596,16 +737,19 @@ function change_sidbar_tab(clickedTab, isCharacterSheetInfo = false) {
 		// This only happens when `is_character_page() == true` and the user clicked the gamelog tab.
 		// This is an important distinction, because we switch to the gamelog tab when the user clicks info on their character sheet that causes details to be displayed instead of the gamelog.
 		// Since the user clicked the tab, we need to show the gamelog instead of any detail info that was previously shown.
-		$(".ct-character-header__group--game-log").click();
+    let gameLogButton = $("div.ct-character-header__group--game-log.ct-character-header__group--game-log-last, [data-original-title='Game Log'] button")
+    if(gameLogButton.length == 0){
+      gameLogButton = $(`[d='M243.9 7.7c-12.4-7-27.6-6.9-39.9 .3L19.8 115.6C7.5 122.8 0 135.9 0 150.1V366.6c0 14.5 7.8 27.8 20.5 34.9l184 103c12.1 6.8 26.9 6.8 39.1 0l184-103c12.6-7.1 20.5-20.4 20.5-34.9V146.8c0-14.4-7.7-27.7-20.3-34.8L243.9 7.7zM71.8 140.8L224.2 51.7l152 86.2L223.8 228.2l-152-87.4zM48 182.4l152 87.4V447.1L48 361.9V182.4zM248 447.1V269.7l152-90.1V361.9L248 447.1z']`).closest('[role="button"]'); // this is a fall back to look for the gamelog svg icon and look for it's button.
+    }
+    gameLogButton.click()
 	}
-
 }
 
 /**
  * Posts a message to the chat when a player connected to the server.
  */
 function report_connection() {
-	var msgdata = {
+	let msgdata = {
 			player: window.PLAYER_NAME,
 			img: window.PLAYER_IMG,
 			text: PLAYER_NAME + " has connected to the server!",
@@ -637,7 +781,20 @@ function should_use_iframes_for_monsters() {
  * @param {Number} monsterId given monster ID
  * @param {UUID} tokenId selected token ID
  */
-function load_monster_stat(monsterId, tokenId) {
+function load_monster_stat(monsterId, tokenId, customStatBlock=undefined) {
+	if(customStatBlock){
+		let container = build_draggable_monster_window();
+		display_stat_block_in_container(customStatBlock, container, tokenId, customStatBlock);
+		$(".sidebar-panel-loading-indicator").hide();
+		return;
+	}
+	if(window.all_token_objects[tokenId].options.monster == 'open5e'){
+		let container = build_draggable_monster_window();
+		build_and_display_stat_block_with_id(window.all_token_objects[tokenId].options.stat, container, tokenId, function () {
+			$(".sidebar-panel-loading-indicator").hide();
+		}, true);
+		return;
+	}
 	if (should_use_iframes_for_monsters()) {
 		load_monster_stat_iframe(monsterId, tokenId);
 		return;
@@ -675,7 +832,7 @@ function load_monster_stat_iframe(monsterId, tokenId) {
 
 	// create a monster block wrapper element
 	if (! $("#resizeDragMon").length) {
-		const monStatBlockContainer = $(`<div id='resizeDragMon' style="display:none; left:204px"></div>`);
+		const monStatBlockContainer = $(`<div id='resizeDragMon' style="display:none; left:300px"></div>`);
 		$("body").append(monStatBlockContainer)
 		monStatBlockContainer.append(build_combat_tracker_loading_indicator())
 		const loadingIndicator = monStatBlockContainer.find(".sidebar-panel-loading-indicator")
@@ -858,7 +1015,7 @@ function load_monster_stat_iframe(monsterId, tokenId) {
 
 function build_draggable_monster_window() {
 
-	const draggable_resizable_div = $(`<div id='resizeDragMon' style="display:none; left:204px"></div>`);
+	const draggable_resizable_div = $(`<div id='resizeDragMon' style="display:none; left:300px"></div>`);
 
 	// check if the monster pane is not open
 	if (! $("#resizeDragMon").length) {
@@ -1008,13 +1165,10 @@ function minimize_player_monster_window_double_click(titleBar) {
  * @returns void
  */
 function init_controls() {
-
-	if ($("#switch_gamelog").length > 0) {
-		// no need to do this more than once. DDB rips things out when you resize the window which is why this could be called multiple times
+	if($("#switch_gamelog").length > 0){
 		return;
 	}
 
-	init_sidebar_tabs();
 
 	if (is_characters_page()) {
 		$(".ct-sidebar").css("top", "-2px");
@@ -1023,9 +1177,15 @@ function init_controls() {
 	}
 	$(".sidebar").css("height", "calc(100vh - 24px)");
 
-	$(".sidebar__control--lock").closest("span.sidebar__control-group.sidebar__control-group--lock > button").click(); // Click on the padlock icon  // This is safe to call multiple times
+	$(".ct-sidebar__inner button[aria-label='Unlocked']").click(); // Click on the padlock icon  // This is safe to call multiple times
+	let gameLogButton = $("div.ct-character-header__group--game-log.ct-character-header__group--game-log-last, [data-original-title='Game Log'] button")
+ 	if(gameLogButton.length == 0){
+   	gameLogButton = $(`[d='M243.9 7.7c-12.4-7-27.6-6.9-39.9 .3L19.8 115.6C7.5 122.8 0 135.9 0 150.1V366.6c0 14.5 7.8 27.8 20.5 34.9l184 103c12.1 6.8 26.9 6.8 39.1 0l184-103c12.6-7.1 20.5-20.4 20.5-34.9V146.8c0-14.4-7.7-27.7-20.3-34.8L243.9 7.7zM71.8 140.8L224.2 51.7l152 86.2L223.8 228.2l-152-87.4zM48 182.4l152 87.4V447.1L48 361.9V182.4zM248 447.1V269.7l152-90.1V361.9L248 447.1z']`).closest('[role="button"]'); // this is a fall back to look for the gamelog svg icon and look for it's button.
+ 	}
+ 	gameLogButton.click()
 
-	let sidebarControlsParent = is_characters_page() ? $(".ct-sidebar__controls") : $(".sidebar__controls");
+	init_sidebar_tabs();
+	let sidebarControlsParent = is_characters_page() ? $(".ct-sidebar__inner>[class*='styles_controls']") : $(".sidebar__controls");
 	sidebarControlsParent.find(".avtt-sidebar-controls").remove();
 	sidebarControlsParent.children().css({ "visibility": "hidden", "width": "0px", "height": "0px", "position": "absolute" });
 	sidebarControlsParent.css({ "display": "block", "visibility": "visible", "height": "28px", "position": "relative", "top": "0px", "left": "0px" });
@@ -1033,7 +1193,7 @@ function init_controls() {
 	let sidebarControls = $("<div class='avtt-sidebar-controls' style='width:100%;height:100%;display:flex;'></div>");
 	sidebarControlsParent.append(sidebarControls);
 
-	hider = $("<div id='hide_rightpanel' class='ddbc-tab-options--layout-pill point-right hasTooltip button-icon hideable' data-name='Show/hide sidebar (q)' data-visible=1><div class='ddbc-tab-options__header-heading'><span class='material-icons button-icon'>chevron_right</span></div></div>");
+	let hider = $("<div id='hide_rightpanel' class='ddbc-tab-options--layout-pill point-right hasTooltip button-icon hideable' data-name='Show/hide sidebar (q)' data-visible=1><div class='ddbc-tab-options__header-heading'><span class='material-icons button-icon'>chevron_right</span></div></div>");
 	hider.click(toggle_sidebar_visibility);
 	sidebarControls.append(hider);
 	if (is_encounters_page() || is_campaign_page()) {
@@ -1054,19 +1214,17 @@ function init_controls() {
 		b2.append(b2ImageDivWrapper);
 		sidebarControls.append(b2);
 
-		if (window.CLOUD) {
-			let b3 = $("<div id='switch_scenes' class='tab-btn hasTooltip button-icon blue-tab' data-name='Scenes' data-target='#scenes-panel'></div>").click(switch_control);
-			let b3ImageDiv = $('<div></div>');
-			let b3ImageDivWrapper = $('<div class="sidebar-tab-image" style="width:100%;height:100%;"></div>');
-			let b3Image = `${window.EXTENSION_PATH}assets/icons/photo.svg`;
-			b3ImageDiv.css({
-				"mask": `url(${b3Image}) no-repeat center / contain`,
-				"-webkit-mask": `url(${b3Image}) no-repeat center / contain`
-			});
-			b3ImageDivWrapper.append(b3ImageDiv);
-			b3.append(b3ImageDivWrapper);
-			sidebarControls.append(b3);
-		}
+		let b3 = $("<div id='switch_scenes' class='tab-btn hasTooltip button-icon blue-tab' data-name='Scenes' data-target='#scenes-panel'></div>").click(switch_control);
+		let b3ImageDiv = $('<div></div>');
+		let b3ImageDivWrapper = $('<div class="sidebar-tab-image" style="width:100%;height:100%;"></div>');
+		let b3Image = `${window.EXTENSION_PATH}assets/icons/photo.svg`;
+		b3ImageDiv.css({
+			"mask": `url(${b3Image}) no-repeat center / contain`,
+			"-webkit-mask": `url(${b3Image}) no-repeat center / contain`
+		});
+		b3ImageDivWrapper.append(b3ImageDiv);
+		b3.append(b3ImageDivWrapper);
+		sidebarControls.append(b3);
 	} else {
 		let b2 = $("<div id='switch_characters' class='tab-btn hasTooltip button-icon blue-tab' data-name='Players' data-target='#players-panel'></div>").click(switch_control);
 		let b2ImageDiv = $('<div></div>');
@@ -1078,20 +1236,20 @@ function init_controls() {
 		sidebarControls.append(b2);
 	}
 
-	if (window.DM) {
-		b6 = $("<div id='switch_sounds' class='tab-btn hasTooltip button-icon blue-tab' data-name='Sounds' data-target='#sounds-panel'></div>");
-		let b6ImageDiv = $('<div></div>');
-		let b6ImageDivWrapper = $('<div class="sidebar-tab-image" style="width:100%;height:100%;"></div>');
-		let b6Image = `${window.EXTENSION_PATH}assets/icons/speaker.svg`;
-		b6ImageDiv.css({
-			"mask": `url(${b6Image}) no-repeat center / contain`,
-			"-webkit-mask": `url(${b6Image}) no-repeat center / contain`
-		});
-		b6ImageDivWrapper.append(b6ImageDiv);
-		b6.append(b6ImageDivWrapper);
-		b6.click(switch_control);
-		sidebarControls.append(b6);
-	}
+	
+	b6 = $("<div id='switch_sounds' class='tab-btn hasTooltip button-icon blue-tab' data-name='Sounds' data-target='#sounds-panel'></div>");
+	let b6ImageDiv = $('<div></div>');
+	let b6ImageDivWrapper = $('<div class="sidebar-tab-image" style="width:100%;height:100%;"></div>');
+	let b6Image = `${window.EXTENSION_PATH}assets/icons/speaker.svg`;
+	b6ImageDiv.css({
+		"mask": `url(${b6Image}) no-repeat center / contain`,
+		"-webkit-mask": `url(${b6Image}) no-repeat center / contain`
+	});
+	b6ImageDivWrapper.append(b6ImageDiv);
+	b6.append(b6ImageDivWrapper);
+	b6.click(switch_control);
+	sidebarControls.append(b6);
+	
 
 	b4 = $("<div id='switch_journal' class='tab-btn hasTooltip button-icon blue-tab' data-name='Journal' data-target='#journal-panel'></div>");
 	let b4ImageDiv = $('<div></div>');
@@ -1102,6 +1260,8 @@ function init_controls() {
 	b4.append(b4ImageDivWrapper);
 	b4.click(switch_control);
 	sidebarControls.append(b4);
+
+
 
 	/*b4 = $("<button id='switch_spell' class='tab-btn hasTooltip button-icon' data-name='Spells' data-target='#spells-panel'></button>").click(switch_control);
 	b4.append("<img src='"+window.EXTENSION_PATH + "assets/icons/magic-wand.svg' height='100%;'>");
@@ -1127,6 +1287,10 @@ function init_controls() {
 		sidebarControls.addClass("player");
 	}
 	addGamelogPopoutButton()
+	$('ol[class*="GameLogEntries"]').off('click').on('click', '.int_source_link', function(event){
+		event.preventDefault();
+		render_source_chapter_in_iframe(event.target.href);
+	});
 }
 
 const MAX_ZOOM_STEP = 20
@@ -1137,8 +1301,8 @@ function init_mouse_zoom() {
 	window.addEventListener('wheel', function (e) {
 		if (e.ctrlKey) {
 			e.preventDefault();
-
-			var newScale;
+			e.stopPropagation();
+			let newScale;
 			if (e.deltaY > MAX_ZOOM_STEP) {
 				newScale = window.ZOOM * 0.9;
 			}
@@ -1154,47 +1318,76 @@ function init_mouse_zoom() {
 			}
 		}
 	}, { passive: false } );
-}
+	let dist1=0;
+	function start_pinch(ev) {
+           if (ev.targetTouches.length == 2) {//check if two fingers touched screen
+               dist1 = Math.hypot( //get rough estimate of distance between two fingers
+                ev.touches[0].pageX - ev.touches[1].pageX,
+                ev.touches[0].pageY - ev.touches[1].pageY);                  
+           }
+    
+    }
+    function move_pinch(ev) {
+           if (ev.targetTouches.length == 2 && ev.changedTouches.length == 2) {
+                 // Check if the two target touches are the same ones that started
+              	let dist2 = Math.hypot(//get rough estimate of new distance between fingers
+                ev.touches[0].pageX - ev.touches[1].pageX,
+                ev.touches[0].pageY - ev.touches[1].pageY);
+              	let newScale;
+                //alert(dist);
+                if(dist1>dist2) {//if fingers are closer now than when they first touched screen, they are pinching
+                  newScale = window.ZOOM * 0.95;
+                }
+                if(dist1<dist2) {//if fingers are further apart than when they first touched the screen, they are making the zoomin gesture
+                  newScale = window.ZOOM * 1.05;
+                }
+
+                if ((newScale > MIN_ZOOM || newScale > window.ZOOM) && (newScale < MAX_ZOOM || newScale < window.ZOOM)) {
+				
+	                change_zoom(newScale);
+	            }
+            }
+           
+    }
+    window.addEventListener ('touchstart', start_pinch, false);
+    window.addEventListener('touchmove', move_pinch, false);
+
+	}
 
 
 /**
  * Start sending google analytics heartbeat events.
  */
-function ga_heartbeat() {
-	ga('AboveVTT.send', 'event', 'keepalive', 'keepalive');
-	setTimeout(ga_heartbeat, 5 * 60 * 1000);
-}
 
 /**
  * Creates and displays splash screen
  * Also starts Google Analytics heartbeat.
  */
 function init_splash() {
-	ga('create', 'UA-189308357-3', 'auto', 'AboveVTT');
-	ga('AboveVTT.send', 'pageview');
 
-	setTimeout(ga_heartbeat, 5 * 60 * 1000);
+	if (!get_avtt_setting_value("alwaysShowSplash") && localStorage.getItem("AboveVttLastUsedVersion") === window.AVTT_VERSION) {
+		// the user only wants to see the splash screen when there's a new version, and this is not a new version
+		console.log("not showing splash screen", localStorage.getItem("AboveVttLastUsedVersion"), window.AVTT_VERSION)
+		return;
+	}
+	localStorage.setItem("AboveVttLastUsedVersion", window.AVTT_VERSION);
 
-	cont = $("<div id='splash'></div>");
-	cont.css('background', "url('/content/1-0-1487-0/skins/waterdeep/images/mon-summary/paper-texture.png')");
-
-	cont.append("<h1 style='margin-top:0px; padding-bottom:2px;margin-bottom:2px; text-align:center'><img width='250px' src='" + window.EXTENSION_PATH + "assets/logo.png'><div style='margin-left:20px; display:inline;vertical-align:bottom;'>0.84-beta2</div></h1>");
+	let cont = $("<div id='splash'></div>");
+	cont.append(`<h1 style='margin-top:0px; padding-bottom:2px;margin-bottom:2px; text-align:center'><img width='250px' src='${window.EXTENSION_PATH}assets/logo.png'><div style='margin-left:20px; display:inline;vertical-align:bottom;'>${window.AVTT_VERSION}${AVTT_ENVIRONMENT.versionSuffix}</div></h1>`);
 	cont.append("<div style='font-style: italic;padding-left:80px;font-size:20px;margin-bottom:2px;margin-top:2px; margin-left:50px;'>Fine.. We'll do it ourselves..</div>");
 
-	s = $("<div/>");
+	let s = $("<div/>");
 	//s.append("<div style='display:inline-block;width:300px'>this stuff here<br>and here<br>and here</div>");
 	s.append("");
 	s.append(`
-	<div style='display:inline-block; vertical-align:top;width:300px;'>
+	<div style='display:inline-block; vertical-align:top;width:100%;'>
 	<div style='padding-top:10px;padding-bottom:10px;'>
-		This is a <b>FREE</b> passion project <b>still in development. Some bugs are to be expected</b>If you need help or want to report a bug <a style='text-decoration: underline;' target='_blank' href='https://discord.gg/cMkYKqGzRh'> join the Discord Server</a>
+		This is a <b>FREE</b> opensource project, kept alive by developers contributing their time, Patrons chipping in with their cash, and users keeping alive the community. If you need help or want to report a bug reach out the <a style='text-decoration: underline;' target='_blank' href='https://discord.gg/cMkYKqGzRh'> the AboveVTT community on discord</a>
 	</div>
 	<div class='splashLinks'>
 		<div class="splashLinkRow">
 			<div><a style='font-weight:bold;text-decoration: underline;' target='_blank' href='https://youtu.be/2GZ8q-hB7pg'>Youtube Tutorial</a></div>
 			<div><a style='font-weight:bold;text-decoration: underline;' target='_blank' href='https://discord.gg/cMkYKqGzRh'>Discord Server</a></div>
-		</div>
-		<div class="splashLinkRow">
 			<div><a style='font-weight:bold;text-decoration: underline;' target='_blank' href='https://github.com/cyruzzo/AboveVTT'>GitHub</a></div>
 			<div><a style='font-weight:bold;text-decoration: underline;' target='_blank' href='https://www.patreon.com/AboveVTT'>Patreon</a></div>
 		</div>
@@ -1204,7 +1397,6 @@ function init_splash() {
 	</div>
 	`);
 
-	s.append('<iframe width="280" height="137" src="https://www.youtube.com/embed/2GZ8q-hB7pg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>');
 	cont.append(s);
 
 	//cont.append("<b>WARNING!</b>This is still a developement version, but a lot of brave adventurers are already playing on this. If you do play a session (or want to talk in general about this project)<a style='text-decoration: underline;' target='_blank' href='https://discord.gg/cMkYKqGzRh'> join the Discord Server</a>");
@@ -1218,45 +1410,29 @@ function init_splash() {
 	ul.append("<li><a style='font-weight:bold;text-decoration: underline;' target='_blank' href='https://www.patreon.com/AboveVTT'>Patreon</a></li>");
 	cont.append(ul);*/
 	cont.append("");
-	cont.append("Contributors: <b>SnailDice (Nadav),Stumpy, Palad1N, KuzKuz, Coryphon, Johnno, Hypergig, JoshBrodieNZ, Kudolpf, Koals, Mikedave, Jupi Taru, Limping Ninja, Turtle_stew, Etus12, Cyelis1224, Ellasar, DotterTrotter, Mosrael, Bain, Faardvark, Azmoria, Natemoonlife, Pensan, H2, CollinHerber</b>");
+	cont.append("<div style='padding-top:10px'>Contributors: <b>SnailDice (Nadav),Stumpy, Palad1N, KuzKuz, Coryphon, Johnno, Hypergig, JoshBrodieNZ, Kudolpf, Koals, Mikedave, Jupi Taru, Limping Ninja, Turtle_stew, Etus12, Cyelis1224, Ellasar, DotterTrotter, Mosrael, Bain, Faardvark, Azmoria, Natemoonlife, Pensan, H2, CollinHerber, Josh-Archer, TachyonicSpace, TheRyanMC, j3f (jeffsenn), MonstraG, Wyrmwood</b></div>");
 
 	cont.append("<br>AboveVTT is an hobby opensource project. It's completely free (like in Free Speech). The resources needed to pay for the infrastructure are kindly donated by the supporters through <a style='font-weight:bold;text-decoration: underline;' target='_blank' href='https://www.patreon.com/AboveVTT'>Patreon</a> , what's left is used to buy wine for cyruzzo");
 
-	patreons = $("<div id='patreons'/>");
-
-	l1 = ["Jordan Cohen","ZorkFox","Josh Downing","John Curran","Nathan Wilhelm","The Dread Pirate Mittens","Eric Invictus","Matthew Bennett","Hekkema","Nomad CLL","Vince Hamilton","D Martinez","airdragon11","William Wallace","Josh Ervin","Lazvon","Nic Ulrich"];
-	l2 = ["Iain Russell","Lukas Edelmann","Oliver","Phillip Geurtz","Virginia Lancianese","Daniel Levitus","TheDigifire","Ryan Purcell","Kris Scott","Brendan Shane","myrrh88","Adam Connor","Kim Dargeou","Scott Moore","Starving Actor","Kurt Piersol","Joaquin Atwood-Ward","Rooster","Michael Palm","Robert Henry","Cynthia Complese","Wilko Rauert","Blaine Landowski","Cameron Patterson 康可","Kyle Kroeker","Rodrigo Carril","E Lee Broyles","Ronen Gregory","Ben S","Steven Sheeley","ThaFreaK","Avilar","Cyril Sneer","Mark Otten","Rollin Newcomb","Kristina Ziese","Erno Tolonen","Becky Egan","Geoffrey Boyd","Matt Dugger","Joseph Ramlow","Jonathan Campbell","Richard Morgan","Bill Croasmun","hidden_traitor"];
-	l3 = ["Daniel Wall","Amata (she_her)","Alexander Engel","Fini Plays","nategonz","Jason Osterbind","Adam Nothnagel","Miguel  Garcia Jr.","Kat","Cobalt Blue","CraftyHobo","CrazyPitesh","Eduardo Villela","Paul Maloney","Chris Cannon","Johan Surac","Chris Sells","Sarah (ExpQuest)","Robert J Correa","Cistern","its Bonez","Michael Crane","Alexander Glass","Blake Thomas","Cheeky Sausage Games","Jerry Jones","Kevin Young","aDingoAteMyBaby","Rennie","Victor Martinez","Michael Gisby","Arish Rustomji","Kat Wells","Michael Augusteijn","Jake Tiffany","LegalMegumin","Nicholas Phillips","Patrick Wolfer","Mage","Robert Sanderson","Michael Huffman","Rennan Whittington","Joseph Pecor","Erik Wilson","Luke Young","Scott Ganz","Brian Gabin","Mischa","AnyxKrypt","Torben Schwank","Unix Wizard","Andrew Thomas","Ciara McCumiskey","Daniel Long","David Meier","Thomas Thurner","Paul V Roundy IV","Jay Holt","Don Whitaker","Craig Liliefisher","Gabriel Alves","Sylvain Gaudreau","Ben","Aaron Wilker","Roger Villeneuve","Alan Pollard","Oliver Kent","David Bonderoff","Sparty92","Raffi Minassian","Jon","Vlad Batory","glenn boardman","Nickolas Olmanson","Duncan Clyborne","Daisy Gonzalez","Rick Anderson","Jack Posey","Stephen Morrey","Cinghiale Frollo","Shawn Morriss","Tomi Skibinski","DM Eric V","Joey Lalor","Chris Thornton","Stumpt","Gabby Alexander","John Ramsburg","David Feig","xinara7","Kallas Thenos","Rob Parr","Jeff Jackson","Nunya Bidness","Christopher Davis","Marshall Súileabáin","Sky Gewant","Reid Bollinger","Konrad Scheffel","Joseph Hensley","Chris Avis","Titus France","Michael Whittington","Simon Haldon","Garry Pettigrew","Brandin Steiner","Simone Anedda","Julian Bailey","Troy Hillier","Quinton Cooper","Angelus Drake","Richart Nopé","SalsaBeard","Eric Weberg","BridgeWatch","Taking a cigarette","Santiago Mosqueda","Gareth Welch","Daniel Cass","Luis Teixeira","shadowd","Jim Mapes","Jeffrey Voetsch","Jay Gattis","Trent McNeeley","Christopher","Ray Wise","Claudia Hall","Will Haning","Jason","Chris Hagmann","Taylor Hodgson-Scott","Tim Cortis","Timothy Yuen","Cody Pederson","Benjamin Moncier","Kerry Kilgour","Guillaume Carrier","Christian Fernandez","Rob S","DrZzs","PatrickJ","Oceanman","Michael Voltz","Beyond The Edges","Dreamdancer","Josh Taylor","Alex Johansen","Dominic M.","Brad Marsh","Kim Hoffman","Katherine McKinley","Colleen Shea","Tony","Jeff Cigrand","Dodzod","Anarchist GM","Purge Thunder","David House","Garrett","UnixBomber","Magnus Tanner","Taborxi","Dracon Dragon","Steve Hutchinson","OldTedG735","Blake","David Stidolph","Claudia Carpenter","JazzFurgeson","Santiago Pacheco","Chris Neves","Brian Jones","Bill Gruetzenbach","Danielle Goldstein","MasterKELP","Ryan Adams","SCrisp","LEO R LIBBY JR","Celtic Exile","BrotherGlacius","ismael cedeno","Jeremy Blosser","taylor tullis","Matt Kircher","NDT 0117","David J Morand","Stefan Velev","John Prince","Lauren Marie","David Russell","Dan Glass","Michael Terry","Lyman Green","Aindrium","wisdom_hunter","Howard Seal","Jos van Baren","Flux1","Anthony K Schlisser","Francesco Possati","Laurinel Gramatica","Joseph Lohrum","melissa penn","Jono Major"];
+	let patreons = $("<div id='patreons'/>");
 
 
 	let shortener =  (p) => p.length>17 ? p.replaceAll(" ","").replaceAll("-","") : p;
-	l1 = l1.map(shortener);
-	l2 = l2.map(shortener);
-	l3 = l3.map(shortener);
 
-	l1div = $("<div class='patreons-title'>Masters</div>");
-	l1ul = $("<ul/>");
-	patreons.append(l1div);
-	patreons.append(l1ul);
-	for (i = 0; i < l1.length; i++)
-		l1ul.append($("<li/>").text(l1[i]));
+	let patrons_list=$("<ul/>");
 
-	l2div = $("<div class='patreons-title'>Heroes</div>");
-	l2ul = $("<ul/>");
-	patreons.append(l2div);
-	patreons.append(l2ul);
-	for (i = 0; i < l2.length; i++)
-		l2ul.append($("<li/>").html(l2[i]));
+	$.ajax({
+		url:'https://abovevtt-assets.s3.eu-central-1.amazonaws.com/patrons.json',
+		success:function(data){
+			JSON.parse(data).patrons.forEach( (el)=>{
+				const li=$("<li/>").text( shortener(el.full_name));
+				li.addClass(el.class);
+				patrons_list.append(li);
+			});
+		}
+	});
 
-	l3div = $("<div class='patreons-title'>Local Heroes</div>");
-	l3ul = $("<ul/>");
-	patreons.append(l3div);
-	patreons.append(l3ul);
-	for (i = 0; i < l3.length; i++)
-		l3ul.append($("<li/>").text(l3[i].replaceAll(" ","")));
-
-	//patreons.append(l1div).append(l2div).append(l3div)
-
+	patreons.append(patrons_list);
 	cont.append(patreons);
 	cont.click(function() {
 		$("#splash").remove();
@@ -1267,49 +1443,12 @@ function init_splash() {
 	cont.append(closeButton);
 
 	$(window.document.body).append(cont);
-
-	setTimeout(function() {
-		init_loading_overlay_beholder();
-	}, 0)
-	window.addEventListener("scroll", function(event) {
-	   event.stopImmediatePropagation();
-	}, true);
-}
-
-var MYCOBALT_TOKEN = false;
-var MYCOBALT_TOKEN_EXPIRATION = 0;
-/**
- * UNIFIED TOKEN HANDLING
- * Triggers callback with a valid DDB cobalt token
- * @param {Function} callback
- * @returns void
- */
-function get_cobalt_token(callback) {
-	if (Date.now() < MYCOBALT_TOKEN_EXPIRATION) {
-		console.log("TOKEN IS CACHED");
-		callback(MYCOBALT_TOKEN);
-		return;
-	}
-	console.log("GETTING NEW TOKEN");
-	$.ajax({
-		url: "https://auth-service.dndbeyond.com/v1/cobalt-token",
-		type: "post",
-		xhrFields: {
-			// To allow cross domain cookies
-			withCredentials: true
-		},
-		success: function(data) {
-			console.log("GOT NEW TOKEN");
-			MYCOBALT_TOKEN = data.token;
-			MYCOBALT_TOKEN_EXPIRATION = Date.now() + (data.ttl * 1000) - 10000;
-			callback(data.token);
-		}
-	});
 }
 
 
-var DDB_WS_OBJ = null;
-var DDB_WS_FORCE_RECONNECT_LOCK = false; // Best effort (not atomic) - ensure function is called only once at a time
+
+let DDB_WS_OBJ = null;
+let DDB_WS_FORCE_RECONNECT_LOCK = false; // Best effort (not atomic) - ensure function is called only once at a time
 /**
  * Attempts to force DDBs WebSocket to re-connect.
  * @returns Bool false - wasn't able to force / no need
@@ -1334,7 +1473,7 @@ function forceDdbWsReconnect() {
 			DDB_WS_OBJ = window[key];
 		}
 
-		if (DDB_WS_OBJ && DDB_WS_OBJ.status == 'disconnected') {
+		if ((DDB_WS_OBJ && DDB_WS_OBJ.status == 'disconnected') || (window.MB.ws.readyState != window.MB.ws.OPEN)) {
 			console.log("Detected that DDBs WebSocket is disconnected - attempting to force reconnect.");
 			DDB_WS_OBJ.reset();
 			DDB_WS_OBJ.connect();
@@ -1360,42 +1499,6 @@ function forceDdbWsReconnect() {
 		console.log("forceDdbWsReconnect error: " + e);
 		DDB_WS_FORCE_RECONNECT_LOCK = false;
 	}
-}
-
-/** DEPRECATED - don't use */
-function init_spells() {
-	return; // this isn't used anywhere so stop building it
-
-
-	var panel = $("<div id='spells-panel' class='sidepanel-content'/>");
-	panel.hide();
-	var iframe = $("<iframe id='iframe-spells-panel'></iframe>");
-	iframe.attr("src", "/spells");
-
-	iframe.height(window.innerHeight - 50);
-	iframe.css("width", "100%");
-	iframe.on('load', function(e) {
-		$(event.target).contents().find("#site-main").css("padding", "0");
-		$(event.target).contents().find("header").hide();
-		//$(event.target).contents().find(".main-filter-container").hide();
-		$(event.target).contents().find("#mega-menu-target").remove();
-		$(event.target).contents().find(".site-bar").remove();
-		$(event.target).contents().find(".page-header").remove();
-		$(event.target).contents().find(".homebrew-comments").remove();
-		$(event.target).contents().find("#footer").hide();
-		$(event.target).contents().find("body").on("click", "a", function(e) {
-			if ($(this).attr('href') != "/spells")
-				$(this).attr("target", "_blank");
-		});
-	});
-
-
-	panel.append(iframe);
-	$(".sidebar__pane-content").append(panel);
-	$(window).resize(function() {
-		$("#iframe-spells-panel").height(window.innerHeight - 50);
-	});
-
 }
 
 /**
@@ -1488,7 +1591,7 @@ function observe_character_sheet_companion(documentToObserve){
  * Prepare character sheet window.
  * @returns void
  */
-function init_sheet() {
+function  init_sheet() {
 	if (is_characters_page()) {
 
 		// in case we're re-initializing, remove these before adding them again
@@ -1496,15 +1599,15 @@ function init_sheet() {
 		$("#sheet_resize_button").remove();
 
 		// when playing on the characters page, we need to do a little bit of UI manipulation so we do that here
-		var sheet_button = $("<div id='sheet_button' class='hasTooltip button-icon hideable ddbc-tab-options--layout-pill' data-name='Show/hide character sheet (SPACE)'><div class='ddbc-tab-options__header-heading'>SHEET</div></div>");
-		sheet_button.css({ "position": "absolute", "top": "-3px", "left": "-80px", "z-index": "999" });
+		let  sheet_button = $("<div id='sheet_button' class='hasTooltip button-icon hideable ddbc-tab-options--layout-pill' data-name='Show/hide character sheet (SPACE)'><div class='ddbc-tab-options__header-heading'>SHEET</div></div>");
+		sheet_button.css({ "position": "absolute", "top": "2px", "left": "-80px", "z-index": "999" });
 		sheet_button.find(".ddbc-tab-options__header-heading").css({ "padding": "6px" });
 		$(".avtt-sidebar-controls").append(sheet_button);
 		sheet_button.click(function(e) {
 			toggle_player_sheet();
 		});
-		var sheet_resize_button = $("<div id='sheet_resize_button' class='hasTooltip button-icon hideable ddbc-tab-options--layout-pill' data-name='Resize character sheet'><div class='ddbc-tab-options__header-heading'>Toggle Sheet Size</div></div>");
-		sheet_resize_button.css({ "position": "absolute", "top": "-3px", "left": "-285px", "z-index": "999" });
+		let  sheet_resize_button = $("<div id='sheet_resize_button' class='hasTooltip button-icon hideable ddbc-tab-options--layout-pill' data-name='Resize character sheet'><div class='ddbc-tab-options__header-heading'>Toggle Sheet Size</div></div>");
+		sheet_resize_button.css({ "position": "absolute", "top": "2px", "left": "-369px", "z-index": "999" });
 		sheet_resize_button.find(".ddbc-tab-options__header-heading").css({ "padding": "6px" });
 		$(".avtt-sidebar-controls").append(sheet_resize_button);
 		// $(".ct-character-sheet__inner").append(sheet_resize_button);
@@ -1514,37 +1617,35 @@ function init_sheet() {
 
 		if (window.innerWidth < 1200 || !is_player_sheet_open()) {
 			sheet_resize_button.hide();
-		}
-		// we're playing on the character page so return early to prevent an iframe from also loading the character sheet
-		return;
+		}		
 	}
-
-	let container = $("<div id='sheet'></div>");
-	let iframe = $("<iframe src=''></iframe>")
-	container.append(iframe);
-
-	var buttonleft = 0;
-	var buttonprev = 0;
-
-	const player_close_title_button=$('<div id="player_close_title_button"><svg class="" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g transform="rotate(-45 50 50)"><rect></rect></g><g transform="rotate(45 50 50)"><rect></rect></g></svg></div>');
-	container.append(player_close_title_button);
-	player_close_title_button.click(function() {
-		close_player_sheet();
-	});
-
-	var reload_button = $('<div id="reload_player_frame_button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></div>)');
-
-
-	reload_button.click(function() {
-		let iframe = $("#sheet").find("iframe");
-		let currentSrc = iframe.attr('src');
-		iframe.attr('src', currentSrc);
-	});
-	container.append(reload_button);
-
-	$("#site").append(container);
-
-	if(window.DM){
+	if($("#sheet").length == 0){
+		let container = $("<div id='sheet'></div>");
+		let iframe = $("<iframe src=''></iframe>")
+		container.append(iframe);
+	
+		let  buttonleft = 0;
+		let  buttonprev = 0;
+	
+		const player_close_title_button=$('<div id="player_close_title_button"><svg class="" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><g transform="rotate(-45 50 50)"><rect></rect></g><g transform="rotate(45 50 50)"><rect></rect></g></svg></div>');
+		container.append(player_close_title_button);
+		player_close_title_button.click(function() {
+			close_player_sheet();
+		});
+	
+		let  reload_button = $('<div id="reload_player_frame_button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg></div>)');
+	
+	
+		reload_button.click(function() {
+			let iframe = $("#sheet").find("iframe");
+			let currentSrc = iframe.attr('src');
+			iframe.attr('src', currentSrc);
+		});
+		container.append(reload_button);
+	
+		$("#site").append(container);
+	
+	
 		/*Set draggable and resizeable on player sheets. Allow dragging and resizing through iFrames by covering them to avoid mouse interaction*/
 		$("#sheet").addClass("moveableWindow");
 		if(!$("#sheet").hasClass("minimized")){
@@ -1564,7 +1665,7 @@ function init_sheet() {
 			minWidth: 200,
 			minHeight: 200
 		});
-
+	
 		$("#sheet").mousedown(function(){
 			frame_z_index_when_click($(this));
 		});
@@ -1581,18 +1682,7 @@ function init_sheet() {
 			}
 		});
 		minimize_player_window_double_click($("#sheet"));
-	}
-	if (!window.DM) {
-
-		sheet_button = $("<div id='sheet_button' class='hasTooltip button-icon hideable ddbc-tab-options--layout-pill' data-name='Show/hide character sheet (SPACE)'><div class='ddbc-tab-options__header-heading'>SHEET</div></div>");
-		sheet_button.css({ "position": "absolute", "top": "-3px", "left": "-80px", "z-index": "999" });
-		sheet_button.find(".ddbc-tab-options__header-heading").css({ "padding": "6px" });
-
-		$(".avtt-sidebar-controls").append(sheet_button);
-
-		sheet_button.click(function(e) {
-			open_player_sheet(window.PLAYER_SHEET);
-		});
+	
 	}
 }
 
@@ -1621,7 +1711,7 @@ function init_player_sheet(pc_sheet, loadWait = 0) {
 
 	if((!window.DM) || (window.KEEP_PLAYER_SHEET_LOADED)) {
 		console.error('here');
-		var loadSheet = function (sheetFrame, sheet_url) {
+		let  loadSheet = function (sheetFrame, sheet_url) {
 			sheetFrame.attr('src', sheet_url);
 		};
 		// TODO: these parameters are not correct: iframe, pc_sheet
@@ -1629,134 +1719,6 @@ function init_player_sheet(pc_sheet, loadWait = 0) {
 	}
 }
 
-/**
- * Observers character sheet for AOE spells.
- * @param {DOMObject} documentToObserve documentToObserve is `$(document)` on the characters page, and `$(event.target).contents()` every where else
- */
-function observe_character_sheet_aoe(documentToObserve) {
-
-	const mutation_target = documentToObserve.get(0);
-	const mutation_config = { attributes: false, childList: true, characterData: false, subtree: true };
-	let container = $("#sheet");
-	if (is_characters_page()) {
-		container = $(".ct-character-sheet__inner");
-	}
-
-	const aoe_observer = new MutationObserver(function() {
-		const icons = documentToObserve.find(".ddbc-note-components__component--aoe-icon:not('.above-vtt-visited')");
-		if (icons.length > 0) {
-			icons.wrap(function() {
-				$(this).addClass("above-vtt-visited");
-				const button = $("<button class='above-aoe integrated-dice__container'></button>");
-
-				const spellContainer = $(this).closest('.ct-spells-spell')
-				const name = spellContainer.find(".ddbc-spell-name").first().text()
-				let color = "default"
-				const feet = $(this).prev().find(".ddbc-distance-number__number").first().text()
-				const dmgIcon = $(this).closest('.ct-spells-spell').find('.ddbc-damage-type-icon')
-				if (dmgIcon.length == 1){
-					color = dmgIcon.attr('class').split(' ').filter(d => d.startsWith('ddbc-damage-type-icon--'))[0].split('--')[1];
-				}
-				let shape = $(this).find('svg').first().attr('class').split(' ').filter(c => c.startsWith('ddbc-aoe-type-icon--'))[0].split('--')[1];
-				shape = sanitize_aoe_shape(shape)
-				button.attr("title", "Place area of effect token")
-				button.attr("data-shape", shape);
-				button.attr("data-style", color);
-				button.attr("data-size", Math.round(feet / window.CURRENT_SCENE_DATA.fpsq));
-				button.attr("data-name", name);
-
-				// Players need the token side panel for this to work for them.
-				// adjustments will be needed in enable_Draggable_token_creation when they do to make sure it works correctly
-				// set_full_path(button, `${RootFolder.Aoe.path}/${shape} AoE`)
-				// enable_draggable_token_creation(button);
-				button.css("border-width","1px");
-				button.click(function(e) {
-					e.stopPropagation();
-					// hide the sheet, and drop the token. Don't reopen the sheet because they probably  want to position the token right away
-					hide_player_sheet();
-					close_player_sheet();
-					const options = build_aoe_token_options(color, shape, feet / window.CURRENT_SCENE_DATA.fpsq, name)
-					place_aoe_token_in_centre(options)
-					// place_token_in_center_of_view only works for the DM
-					// place_token_in_center_of_view(options)
-				});
-				return button;
-			});
-			console.log(`${icons.length} aoe spells discovered`);
-		}
-	});
-
-	aoe_observer.observe(mutation_target, mutation_config);
-}
-
-
-/** Called from our character sheet observer for Dice Roll formulae.
- * @param element the jquery element that we observed changes to
- */
-function inject_dice_roll(element) {
-	try {
-		if (element.find("button.avtt-roll-formula-button").length > 0) {
-			console.debug("inject_dice_roll already has a button")
-			return;
-		}
-		const text = element.text();
-		if (text.match(slashCommandRegex)?.[0]) {
-			const diceRoll = DiceRoll.fromSlashCommand(text, window.PLAYER_NAME, window.PLAYER_IMG);
-			const button = $(`<button class='avtt-roll-formula-button integrated-dice__container' title="${diceRoll.action?.toUpperCase() ?? "CUSTOM"}: ${diceRoll.rollType?.toUpperCase() ?? "ROLL"}">${diceRoll.expression}</button>`);
-			button.on("click", function (clickEvent) {
-				clickEvent.stopPropagation();
-				window.diceRoller.roll(diceRoll);
-			});
-			element.empty();
-			element.append(button);
-		}
-	} catch (error) {
-		console.log("inject_dice_roll failed to process element", element, error);
-	}
-}
-
-/**
-* Observers character sheet for Dice Roll formulae.
-* @param {DOMObject} documentToObserve documentToObserve is `$(document)` on the characters page, and `$(event.target).contents()` every where else
-*/
-function observe_character_sheet_dice_rolls(documentToObserve) {
-	if (window.dice_roll_observer) {
-		window.dice_roll_observer.disconnect();
-	}
-
-	window.dice_roll_observer = new MutationObserver(function(mutationList, observer) {
-
-		console.log("dice_roll_observer", mutationList);
-
-		// initial injection of our buttons
-		const notes = documentToObserve.find(".ddbc-note-components__component:not('.above-vtt-visited')");
-		notes.each(function() {
-			console.log("dice_roll_observer iterating", mutationList);
-			$(this).addClass("above-vtt-visited"); // make sure we only parse this element once
-			inject_dice_roll($(this));
-		});
-
-		// handle updates to element changes that would strip our buttons
-		mutationList.forEach(mutation => {
-			if (mutation.type === "childList") {
-				mutation.addedNodes.forEach(node => {
-					if (typeof node.data === "string" && node.data.match(slashCommandRegex)?.[0]) {
-						inject_dice_roll($(mutation.target));
-					}
-				});
-			}
-			if (mutation.type === "characterData") {
-				if (typeof mutation.target.data === "string" && mutation.target.data.match(slashCommandRegex)?.[0]) {
-					inject_dice_roll($(mutation.target));
-				}
-			}
-		});
-	});
-
-	const mutation_target = documentToObserve.get(0);
-	const mutation_config = { attributes: false, childList: true, characterData: true, subtree: true };
-	dice_roll_observer.observe(mutation_target, mutation_config);
-}
 
 /**
  * Opens the character sheet window.
@@ -1769,9 +1731,7 @@ function open_player_sheet(sheet_url, closeIfOpen = true) {
 		$("#sheet.minimized").dblclick();
 	}
 	console.log("open_player_sheet"+sheet_url);
-	if (is_characters_page()) {
-		return;
-	}
+
 	close_player_sheet(); // always close before opening
 
 	let container = $("#sheet");
@@ -1785,29 +1745,89 @@ function open_player_sheet(sheet_url, closeIfOpen = true) {
 	iframe.attr('data-sheet_url',sheet_url);
 	iframe.attr('src', sheet_url);
 
+
+
 	// lock this sheet
 	window.MB.sendMessage("custom/myVTT/lock", { player_sheet: sheet_url });
 	iframe.off("load").on("load", function(event) {
 		console.log("fixing up the character sheet");
 
-		observe_character_sheet_dice_rolls($(event.target).contents());
+	
 
+
+		let scripts = [
+		    // External Dependencies
+		    { src: "jquery-3.6.0.min.js" },
+		    // AboveVTT Files
+		    { src: "DiceContextMenu/DiceContextMenu.js" },	   
+		    { src: "MonsterDice.js" },	
+		    { src: "DiceRoller.js" },
+		    { src: "DDBApi.js" },
+		    { src: "rpg-dice-roller.bundle.min.js" },
+		    // AboveVTT files that execute when loaded
+		    { src: "CoreFunctions.js" }, // Make sure CoreFunctions executes first
+		    { src: "CharactersPage.js" } // Make sure CharactersPage executes last
+		]
+
+		// Too many of our scripts depend on each other.
+		// This ensures that they are loaded sequentially to avoid any race conditions.
+		let injectScript = function () {
+		    if (scripts.length === 0) {
+		        delete scripts;
+		        return;
+		    }
+		    let nextScript = scripts.shift();
+		    let s = $(event.target)[0].contentDocument.createElement('script');
+		    s.src = `${window.EXTENSION_PATH}${nextScript.src}`;
+		    if (nextScript.type !== undefined) {
+		        s.setAttribute('type', nextScript.type);
+		    }
+		    console.log(`attempting to append ${nextScript.src}`);
+		    s.onload = function() {
+		        console.log(`finished injecting ${nextScript.src}`);
+		        injectScript();
+		    };
+		    ($(event.target)[0].contentDocument.head || $(event.target)[0].contentDocument.documentElement).appendChild(s);
+		}
+		injectScript();
+		
+		
+		$(event.target).contents().find("head").append($(`<link type="text/css" rel="Stylesheet" href="${window.EXTENSION_PATH}DiceContextMenu/DiceContextMenu.css" />`));
 		$(event.target).contents().find("head").append(`
 			<style>
-			button.avtt-roll-button {
-				/* lifted from DDB encounter stat blocks  */
-				color: #b43c35;
-				border: 1px solid #b43c35;
-				border-radius: 4px;
-				background-color: #fff;
-				white-space: nowrap;
-				font-size: 14px;
-				font-weight: 600;
-				font-family: Roboto Condensed,Open Sans,Helvetica,sans-serif;
-				line-height: 18px;
-				letter-spacing: 1px;
-				padding: 1px 4px 0;
-			}			
+			button.avtt-roll-button,
+			.ct-sidebar__inner .integrated-dice__container,
+			.ct-sidebar__inner .avtt-roll-button{
+			      /* lifted from DDB encounter stat blocks  */
+			      color: var(--theme-contrast, #b43c35);
+			      background: transparent !important;
+			      border: 1px solid var(--theme-color, #b43c35);
+			      border-radius: 4px;
+			      background-color: #fff;
+			      white-space: nowrap;
+			      font-family: Roboto Condensed,Open Sans,Helvetica,sans-serif;
+			      letter-spacing: 1px;
+			      padding: 1px 4px 0;	       
+			}
+			.ct-sidebar__inner .integrated-dice__container, .ct-sidebar__inner .avtt-roll-button{
+			    font-size:12px;
+			    line-height:10px;
+			    padding:2px 2px 1px 2px;
+			}
+      .ct-sidebar__inner .stat-block .avtt-roll-button{
+          font-size:15px;
+          line-height:15px;
+          font-weight: unset;
+      }
+      .ct-sidebar__inner [class*='ddbc-creature-block'] .avtt-roll-button{
+          /* lifted from DDB encounter stat blocks  */
+          color: #b43c35 !important;
+          background: #fff !important;
+          border: 1px solid #b43c35 !important;
+          line-height:unset !important;
+          font-size:unset !important;
+          padding: 1px 4px 0 !important;  
+      }
 			.MuiPaper-root {
 				padding: 0px 16px;
 				width: 100px;
@@ -1830,6 +1850,13 @@ function open_player_sheet(sheet_url, closeIfOpen = true) {
 			.ct-character-sheet-mobile__header{
 				top: 0px !important; 
 			}
+			#mega-menu-target,
+			.site-bar,
+			.page-header,
+			.homebrew-comments,
+			.mega-menu__fallback{
+				display:none !important;
+			}
 
 			@media (min-width: 1200px){
 				html body#site.body-rpgcharacter-sheet{
@@ -1839,200 +1866,16 @@ function open_player_sheet(sheet_url, closeIfOpen = true) {
 			</style>
 		`);
 		console.log("removing headers");
-		$(event.target).contents().find("#mega-menu-target").remove();
-		$(event.target).contents().find(".site-bar").remove();
-		$(event.target).contents().find(".page-header").remove();
-		$(event.target).contents().find(".homebrew-comments").remove();
-		$(event.target).contents().find(".mega-menu__fallback").remove();
-
-		$(event.target).contents().on("DOMNodeInserted", function(addedEvent) {
-			let addedElement = $(addedEvent.target);
-			if (addedElement.hasClass("ct-sidebar__pane")) {
-				let statBlock = addedElement.find(".ct-creature-pane");
-				if (statBlock.length > 0) {
-					scan_player_creature_pane(statBlock);
-				}
-			}
-		});
-		$(event.target).contents().on("DOMSubtreeModified", ".ct-sidebar__pane", function(modifiedEvent) {
-			let statBlock = $(modifiedEvent.target).find(".ct-creature-pane");
-			if (statBlock.length > 0) {
-				scan_player_creature_pane(statBlock);
-			}
-		});
-
-		// DICE STREAMING ?!?!
-		if(!window.DM){
-			let firstTime=false;
-			if(!window.MYMEDIASTREAM)
-				firstTime = true;
-			let diceRollPanel = $(event.target).contents().find(".dice-rolling-panel__container");
-			if (diceRollPanel.length > 0) {
-				window.MYMEDIASTREAM = diceRollPanel.get(0).captureStream(0);
 
 
-				if (window.JOINTHEDICESTREAM) {
-					// we should tear down and reconnect
-					for (let i in window.STREAMPEERS) {
-						console.log("replacing the track")
-						window.STREAMPEERS[i].getSenders()[0].replaceTrack(window.MYMEDIASTREAM.getVideoTracks()[0]);
-					}
-				}
-
-			}
-
+		if (window.JOINTHEDICESTREAM) {
+			joinDiceRoom();
 		}
 
-		// CHARACTER
-		let tokenid = $(event.target).attr('src');
-		var synchp = function() {
-			var hp_element = $(event.target).contents().find(".ct-health-summary__hp-group--primary > div:nth-child(1) .ct-health-summary__hp-number,ct-status-summary-mobile__hp-current");
-
-			if (hp_element.length > 0) {
-				var current_hp = hp_element.html();
-				var max_hp = $(event.target).contents().find(".ct-health-summary__hp-group--primary > div:nth-child(3) .ct-health-summary__hp-number,ct-status-summary-mobile__hp-max").html();
-			}
-			else {
-				var current_hp = 0;
-				if (!window.DM && window.PLAYERDATA && window.PLAYERDATA.max_hp > 0)
-					max_hp = window.PLAYERDATA.max_hp;
-				else
-					max_hp = 0;
-			}
-
-			var temp_hp = 0;
-			var temp_hp_element = $(event.target).contents().find(".ct-health-summary__hp-item--temp > .ct-health-summary__hp-item-content > .ct-health-summary__hp-number ");
-			if (temp_hp_element.length > 0) {
-				temp_hp = temp_hp_element.html();
-			}
-
-
-			var pp = $(event.target).contents().find(".ct-senses > .ct-senses__callouts:first-child .ct-senses__callout-value");
-
-			let conditions = [];
-			var conds_tag = $(event.target).contents().find(".ct-conditions-summary .ddbc-condition__name");
-
-			conds_tag.each(function(el, idx) {
-				conditions.push($(this).text());
-			});
-
-			abilities = [];
-
-			const isScore = (val) => {
-				return val.indexOf('+') >= 0 || val.indexOf('-') >= 0;
-			}
-
-			$(event.target).contents().find('.ct-quick-info__ability,.ct-main-mobile__ability').each(function() {
-				let abilityScores;
-				if (isScore($(this).find('.ddbc-ability-summary__secondary').text())) {
-					abilityScores = {
-						abilityName: $(this).find('.ddbc-ability-summary__label').text(),
-						abilityAbbr: $(this).find('.ddbc-ability-summary__abbr').text(),
-						modifier: `${$(this).find('.ddbc-signed-number__sign').text()}${$(this).find('.ddbc-signed-number__number').text()}`,
-						score: $(this).find('.ddbc-ability-summary__primary button').text()
-					}
-				} else {
-					abilityScores = {
-						abilityName: $(this).find('.ddbc-ability-summary__label').text(),
-						abilityAbbr: $(this).find('.ddbc-ability-summary__abbr').text(),
-						modifier: `${$(this).find('.ddbc-signed-number__sign').text()}${$(this).find('.ddbc-signed-number__number').text()}`,
-						score: $(this).find('.ddbc-ability-summary__secondary').text()
-					};
-				}
-				abilities.push(abilityScores);
-			});
-
-
-			var playerdata = {
-				id: tokenid,
-				hp: current_hp,
-				max_hp: max_hp,
-				temp_hp: temp_hp,
-				ac: $(event.target).contents().find(".ddbc-armor-class-box__value").html(),
-				pp: pp.html(),
-				conditions: conditions,
-				abilities,
-				walking: `${$(event.target).contents().find(".ct-quick-info__box--speed .ddbc-distance-number__number").text()}${$(event.target).contents().find(".ct-quick-info__box--speed .ddbc-distance-number__label").text()}`,
-				inspiration: $(event.target).contents().find('.ct-inspiration__status--active').length
-			};
-
-			if (!window.DM) {
-				window.PLAYERDATA = playerdata;
-				window.MB.sendMessage('custom/myVTT/playerdata', window.PLAYERDATA);
-				send_player_data_to_all_peers(playerdata);
-			}
-			else {
-				window.MB.handlePlayerData(playerdata);
-			}
-
-			// FIX DDB BUG ON Z-INDEX FOR RIGHT CLICK CONTEXT MENU FOR ROLLING (piggybacking on synchp)
-			if($(event.target).contents().find(".ct-sidebar").length > 0)
-				$(event.target).contents().find(".ct-sidebar").zIndex(11);
-		};
-
-		// DETECT CHANGES ON HEALTH, WAIT 1 SECOND AND LOCK TO AVOID TRIGGERING IT TOO MUCH AND CAUSING ISSUES
-
-
-		// DISABLED SINCE WE NOW READ JSON DATA FOR THE CHARACTER.
-		/*
-		$(event.target).contents().find("#site").on("DOMSubtreeModified", ".ct-quick-info__health,.ct-combat__statuses-group--conditions,"+
-			".ct-inspiration__status,.ct-combat__summary-group--ac,.ct-speed-box__box-value", function() {
-			if (window.WAITING_FOR_SYNCHP)
-				return;
-			else {
-				window.WAITING_FOR_SYNCHP = true;
-				setTimeout(function() {
-					window.WAITING_FOR_SYNCHP = false;
-					synchp();
-				}, 1000);
-			}
-		});
-		*/
-		var mutation_target = $(event.target).contents().get(0);
-		var mutation_config = { attributes: false, childList: true, characterData: false, subtree: true };
-
-		observe_character_sheet_aoe($(event.target).contents());
 		// WIP to allow players to add in tokens from their extra tab
 		// observe_character_sheet_companion($(event.target).contents());
 
-		var observer = new MutationObserver(function(mutations) {
-			console.log('scattai');
-			var sidebar = $(event.target).contents().find(".ct-sidebar__pane-content");
-			if (sidebar.length > 0 && $(event.target).contents().find("#castbutton").length == 0) {
-				inject_sidebar_send_to_gamelog_button($(event.target).contents().find(".ct-sidebar__pane-content > div"));
 
-			}
-		});
-
-		observer.observe(mutation_target, mutation_config);
-
-	//artificer infusions still require this as it is not included in ac values captured elsewhere
-		const waitToSync = (timeElapsed = 0) => {
-			setTimeout(() => {
-				var ac_element = $(event.target).contents().find(".ct-combat .ddbc-armor-class-box,ct-combat-mobile__extra--ac");
-				if (ac_element.length > 0) {
-					if (tokenid in window.TOKEN_OBJECTS){
-						let totalAc = $(event.target).contents().find(".ddbc-armor-class-box__value").html();
-						if(window.TOKEN_OBJECTS[tokenID].options.ac != totalAc)
-						{
-							window.TOKEN_OBJECTS[tokenid].options.ac = totalAc
-							window.TOKEN_OBJECTS[tokenid].place();
-							window.TOKEN_OBJECTS[tokenid].update_and_sync();
-							if(tokenid in window.PLAYER_STATS) {
-								window.PLAYER_STATS[tokenid].ac = totalAc;
-								send_player_data_to_all_peers(window.PLAYER_STATS[tokenid])
-							}
-						}
-
-					}
-				} else {
-					if (timeElapsed < 15000) {
-						waitToSync(timeElapsed + 500);
-					}
-				}
-			}, 500);
-		};
-		waitToSync();
 
 		setTimeout(function() {
 			$("#sheet").find("iframe").each(function() {
@@ -2072,9 +1915,12 @@ function close_player_sheet()
 		}
 		window.MB.sendMessage("custom/myVTT/player_sheet_closed", { player_sheet: window.PLAYER_SHEET });
 	}
-	if (window.dice_roll_observer) {
-		window.dice_roll_observer.disconnect();
-		delete window.dice_roll_observer;
+	if (window.character_sheet_observer) {
+		window.character_sheet_observer.disconnect();
+		delete window.character_sheet_observer;
+	}
+	if(!window.DM){
+			observe_character_sheet_changes($('#site-main, .ct-sidebar__portal'));
 	}
 }
 
@@ -2082,9 +1928,10 @@ function close_player_sheet()
  * Notifie about player joining the game.
  */
 function notify_player_join() {
-	var playerdata = {
-		abovevtt_version: abovevtt_version,
-		player_id: window.PLAYER_ID
+	const playerdata = {
+		abovevtt_version: window.AVTT_VERSION,
+		player_id: window.PLAYER_ID,
+		pc: read_pc_object_from_character_sheet(window.PLAYER_ID)
 	};
 
 	console.log("Sending playerjoin msg, abovevtt version: " + playerdata.abovevtt_version + ", sheet ID:" + window.PLAYER_ID);
@@ -2096,8 +1943,8 @@ function notify_player_join() {
  * @returns Number - latest version seen
  */
 function check_versions_match() {
-	var latestVersionSeen = 0.0;
-	var oldestVersionSeen = 1000.0;
+	let  latestVersionSeen = 0.0;
+	let  oldestVersionSeen = 1000.0;
 
 	$.each(window.CONNECTED_PLAYERS, function(key, value) {
 		latestVersionSeen = Math.max(latestVersionSeen, value);
@@ -2105,195 +1952,27 @@ function check_versions_match() {
 	});
 
 	if (latestVersionSeen != oldestVersionSeen) {
-		var alertMsg = 'Not all players connected to your session have the same AboveVTT version (highest seen v' + latestVersionSeen + ', lowest seen v' + oldestVersionSeen + ').\nFor best experience, it is recommended all connected players and the DM run the latest AboveVTT version.\n\n';
+		let  alertMsg = 'Not all players connected to your session have the same AboveVTT version (highest seen v' + latestVersionSeen + ', lowest seen v' + oldestVersionSeen + ').\nFor best experience, it is recommended all connected players and the DM run the latest AboveVTT version.\n\n';
 		for (const [key, value] of Object.entries(window.CONNECTED_PLAYERS)) {
 			alertMsg += (key == 0 ? "The DM" : "Player DDB character ID " + key) + " is running AboveVTT v" + value + "\n";
 		}
 
-		alert(alertMsg);
+		// alert(alertMsg); // we can re-enable this later if we want to, but it's been off for dozens of versions, so we probably don't need it.
+		console.warn(alertMsg);
 	}
 
 	return latestVersionSeen;
 }
 
-/**
- * Returns the current game ID.
- * @returns {String} The id of the `game` which is usually the same as the campaign id
- */
-function find_game_id() {
-	if (window.gameId === undefined) {
-		if (is_encounters_page()) {
-			const urlParams = new URLSearchParams(window.location.search);
-			window.gameId = urlParams.get('cid');
-		} else {
-			window.gameId = $("#message-broker-client").attr("data-gameId");
-		}
-	}
-	return window.gameId;
-};
 
 /**
  * Check if all connected users are on a version that is greater than or equal to `versionString`
  * @returns {Boolean}
  */
 function is_supported_version(versionString) {
-	return abovevtt_version >= versionString;
+	return window.AVTT_VERSION >= versionString;
 }
 
-
-/**
- * Main init function.
- */
-function init_above(){
-	console.log("init_above");
-
-	// WORKAROUND FOR ANNOYING DDB BUG WITH COOKIES AND UPVOTING STUFF
-	document.cookie="Ratings=;path=/;domain=.dndbeyond.com;expires=Thu, 01 Jan 1970 00:00:00 GMT";
-	// END OF IT
-	//window.STARTING = true;
-	let gameId = find_game_id();
-
-	let http_api_gw = "https://services.abovevtt.net";
-	let searchParams = new URLSearchParams(window.location.search);
-	if(searchParams.has("dev")) {
-		http_api_gw = "https://jiv5p31gj3.execute-api.eu-west-1.amazonaws.com";
-	}
-
-	//THIS SHOULD HAVE ALREADY BEEN SET
-	// window.CAMPAIGN_SECRET=$(".ddb-campaigns-invite-primary").text().split("/").pop();
-	//let gameid = $("#message-broker-client").attr("data-gameId");
-
-	let hasData = false;
-	if (localStorage.getItem('ScenesHandler' + gameId) != null) {
-		hasData = true;
-	}
-	if (localStorage.getItem('Migrated' + gameId) != null) {
-		hasData = false;
-	}
-
-
-	$.ajax({
-		url: http_api_gw+"/services?action=getCampaignData&campaign=" + window.CAMPAIGN_SECRET,
-		success: function(campaignData) {
-			console.log(campaignData);
-			if(campaignData.Item && campaignData.Item.data && campaignData.Item.data.cloud) {
-				window.CLOUD = true;
-				init_things();
-			}
-			else { // CHECK IF THIS IS A NEW CAMPAIGN
-				if (hasData || (window.FORCED_DM)) {
-					console.log("**********UNMIGRATED CAMPAIGN*************");
-					window.CLOUD = false;
-					init_things();
-				}
-				else{ // THIS IS A VIRGIN CAMPAIGN. LET'S SET IT UP FOR THE CLOUD!!! :D :D :D :D
-					if(window.DM) {
-						$.ajax({
-							url: http_api_gw+"/services?action=setCampaignData&campaign=" + window.CAMPAIGN_SECRET,
-							type:'PUT',
-							contentType:'application/json',
-							data:JSON.stringify({
-								cloud:1
-							}),
-							success: function() {
-								console.log("******* WELCOME TO THE CLOUD*************")
-								window.CLOUD = true;
-								init_things();
-							}
-						});
-					}
-					else{ // PLAYER SHOULD NOT FORCE CLOUD MIGRATION
-						window.CLOUD = false;
-						init_things();
-					}
-				}
-			}
-		}
-	}
-	)
-}
-
-/**
- * Initializes global vafriables.
- */
-function init_things() {
-	console.log("init things");
-	window.STARTING = true;
-	let searchParams = new URLSearchParams(window.location.search)
-	var gameid = $("#message-broker-client").attr("data-gameId");
-	window.TOKEN_OBJECTS = {};
-	window.REVEALED = [];
-	window.DRAWINGS = [];
-	window.PLAYER_STATS = {};
-	window.CONNECTED_PLAYERS = {};
-	window.TOKEN_SETTINGS = $.parseJSON(localStorage.getItem('TokenSettings' + gameId)) || {};
-	window.EXPERIMENTAL_SETTINGS = $.parseJSON(localStorage.getItem('ExperimentalSettings' + gameId)) || {};
-	window.CURRENTLY_SELECTED_TOKENS = [];
-	window.TOKEN_PASTE_BUFFER = [];
-	window.TOKEN_OBJECTS_RECENTLY_DELETED = {};
-	window.TOKEN_CUSTOMIZATIONS = [];
-
-	if (window.CAMPAIGN_SECRET === undefined) {
-		window.CAMPAIGN_SECRET=$(".ddb-campaigns-invite-primary").text().split("/").pop();
-	}
-
-	fetch_token_customizations();
-
-	window.PeerManager = new PeerManager();
-	window.MB = new MessageBroker();
-	window.StatHandler = new StatHandler();
-
-	if (window.DM && !window.location.search.includes("popoutgamelog=true")) {
-		window.CONNECTED_PLAYERS['0'] = abovevtt_version; // ID==0 is DM
-		window.ScenesHandler = new ScenesHandler(gameId);
-		window.EncounterHandler = new EncounterHandler(function(didSucceed) {
-			if (didSucceed === false) {
-				showDebuggingAlert();
-			}
-			init_ui();
-			if (is_encounters_page()) {
-
-				// This brings in the styles that are loaded on the character sheet to support the "send to gamelog" feature.
-				$("body").append(`<link rel="stylesheet" type="text/css" href="https://media.dndbeyond.com/character-tools/styles.bba89e51f2a645f81abb.min.css" >`);
-
-				$("#site-main").css({"display": "block", "visibility": "hidden"});
-				$(".dice-rolling-panel").css({"visibility": "visible"});
-				$("div.sidebar").parent().css({"display": "block", "visibility": "visible"});
-				$("div.dice-toolbar").css({"bottom": "35px"});
-				$("#ddbeb-popup-container").css({"display": "block", "visibility": "visible"});
-			}
-
-			init_scene_selector();
-			init_splash();
-
-		});
-	} else if (is_characters_page()) {
-
-		hide_player_sheet();
-		init_character_page_sidebar();
-
-		$(window).off("resize").on("resize", function() {
-			if(window.showPanel == undefined){
-				window.showPanel = is_sidebar_visible();
-			}
-			init_character_page_sidebar();
-			setTimeout(function(){
-				if(!window.showPanel){
-					hide_sidebar();
-				}
-			}, 1000)
-
-		});
-
-	} else {
-		init_ui();
-		init_splash();
-	}
-
-	$("#site").append("<div id='windowContainment'></div>");
-}
-
-var needs_ui = true;
 /**
  * Initializes the sidebar on the character page.
  *
@@ -2313,93 +1992,83 @@ function init_character_page_sidebar() {
 	}
 
 	// Open the gamelog, and lock it open
-	$(".ct-character-header__group--game-log").click();
+	let gameLogButton = $("div.ct-character-header__group--game-log.ct-character-header__group--game-log-last, [data-original-title='Game Log'] button")
+	if(gameLogButton.length == 0){
+	  gameLogButton = $(`[d='M243.9 7.7c-12.4-7-27.6-6.9-39.9 .3L19.8 115.6C7.5 122.8 0 135.9 0 150.1V366.6c0 14.5 7.8 27.8 20.5 34.9l184 103c12.1 6.8 26.9 6.8 39.1 0l184-103c12.6-7.1 20.5-20.4 20.5-34.9V146.8c0-14.4-7.7-27.7-20.3-34.8L243.9 7.7zM71.8 140.8L224.2 51.7l152 86.2L223.8 228.2l-152-87.4zM48 182.4l152 87.4V447.1L48 361.9V182.4zM248 447.1V269.7l152-90.1V361.9L248 447.1z']`).closest('[role="button"]'); // this is a fall back to look for the gamelog svg icon and look for it's button.
+	}
+	gameLogButton.click()
 	$(".ct-sidebar__control--unlock").click();
 
-	// After that click, give it a second to inject and render the sidebar
-	setTimeout(function() {
+	$("#site-main").css({"display": "block", "visibility": "hidden"});
+	$(".dice-rolling-panel").css({"visibility": "visible"});
+	$("#mega-menu-target").hide();
+	$(".ct-character-header-desktop").css({
+		"background": "rgba(0,0,0,.85)"
+	});
 
-		$("#site-main").css({"display": "block", "visibility": "hidden"});
-		$(".dice-rolling-panel").css({"visibility": "visible"});
-		$("div.dice-toolbar").css({"bottom": "35px"});
-		$("#mega-menu-target").hide();
-		$(".ct-character-header-desktop").css({
-			"background": "rgba(0,0,0,.85)"
-		});
+	$("div.sidebar").parent().css({"display": "block", "visibility": "visible"});
+	$(".ct-sidebar__control--unlock").click();
+	$("div.sidebar").parent().css({"display": "block", "visibility": "visible"});
+	$(".ct-sidebar__pane-top").hide();
+	$(".ct-sidebar__pane-bottom").hide();
+	$(".ct-sidebar__pane-gap").hide();
 
-		$("div.sidebar").parent().css({"display": "block", "visibility": "visible"});
-		$(".ct-sidebar__control--unlock").click();
-		$("div.sidebar").parent().css({"display": "block", "visibility": "visible"});
-		$(".ct-sidebar__pane-top").hide();
-		$(".ct-sidebar__pane-bottom").hide();
-		$(".ct-sidebar__pane-gap").hide();
-		$(".ct-sidebar__pane-content").css({"border": "none", "padding-bottom": "0px"});
-		$(".ct-sidebar__portal").css({
-			"right": "0px",
-			"position": "fixed",
-			"bottom": "0px",
-			"top": "0px",
-			"z-index": 5
-		});
-		$(".ct-sidebar").css({ "right": "0px", "top": "0px", "bottom": "0px" });
-		$(".ct-sidebar__portal .ct-sidebar .ct-sidebar__inner .ct-sidebar__controls .avtt-sidebar-controls").css("display", "flex")
 
-		$(".ct-sidebar__pane").off("click.setCondition").on("click.setCondition", ".set-conditions-button", function(clickEvent) {
-			let conditionName = $(clickEvent.target).parent().find("span").text();
-		  	$('.ct-combat__statuses-group--conditions .ct-combat__summary-label:contains("Conditions"), .ct-combat-tablet__cta-button:contains("Conditions"), .ct-combat-mobile__cta-button:contains("Conditions")').click();
-		  	$(`.ct-sidebar__pane .ct-condition-manage-pane__condition-name:contains('${conditionName}') ~ .ct-condition-manage-pane__condition-toggle>.ddbc-toggle-field--is-disabled`).click();
-		  	$(`#switch_gamelog`).click();
-		});
-		$(".ct-sidebar__pane").off("click.removeCondition").on("click.removeCondition", ".remove-conditions-button", function(clickEvent) {
-			let conditionName = $(clickEvent.target).parent().find("span").text();
-		  	$('.ct-combat__statuses-group--conditions .ct-combat__summary-label:contains("Conditions"), .ct-combat-tablet__cta-button:contains("Conditions"), .ct-combat-mobile__cta-button:contains("Conditions")').click();
-		  	$(`.ct-sidebar__pane .ct-condition-manage-pane__condition-name:contains('${conditionName}') ~ .ct-condition-manage-pane__condition-toggle>.ddbc-toggle-field--is-enabled`).click();
-		  	$(`#switch_gamelog`).click();
+	$(".ct-sidebar__inner [class*='styles_content']").css({"border": "none", "padding-bottom": "0px"});
+	$(".ct-sidebar__portal").css({
+		"right": "0px",
+		"position": "fixed",
+		"bottom": "0px",
+		"top": "0px",
+		"z-index": 5
+	});
+	$(".ct-sidebar").css({ "right": "0px", "top": "0px", "bottom": "0px" });
+	$(".ct-sidebar__portal .ct-sidebar .ct-sidebar__inner .ct-sidebar__controls .avtt-sidebar-controls").css("display", "flex")
 
-		});
-		$("a.ct-character-header-desktop__builder-link").on("click", function(){
+	$(".ct-sidebar__inner").off("click.setCondition").on("click.setCondition", ".set-conditions-button", function(clickEvent) {
+		let conditionName = $(clickEvent.target).parent().find("span").text();
+			$('.ct-combat__statuses-group--conditions .ct-combat__summary-label:contains("Conditions"), .ct-combat-tablet__cta-button:contains("Conditions"), .ct-combat-mobile__cta-button:contains("Conditions")').click();
 			setTimeout(function(){
-				$(".builder-sections-sheet-icon").off().on("click", function(){
-					window.location.href = `https://www.dndbeyond.com${$(".builder-sections-sheet-icon").attr("href")}?cs=${window.CAMPAIGN_SECRET}&cid=${get_campaign_id()}&abovevtt=true`;
-				});
-			}, 1000)
-		});
-		$(".ct-character-header-info__content").on("click", function(){
+				$('.ct-condition-manage-pane').css('visibility', 'hidden');
+				$(`.ct-sidebar__inner .ct-condition-manage-pane__condition-name:contains('${conditionName}') ~ .ct-condition-manage-pane__condition-toggle>[class*='styles_toggle'][aria-pressed="false"]`).click();
+			}, 10)
 			setTimeout(function(){
-				$(".ct-pane-menu__item:contains('Manage Character & Levels')").replaceWith($(".ct-pane-menu__item:contains('Manage Character & Levels')").clone());
-				$(".ct-pane-menu__item:contains('Manage Character & Levels')").off().on("click", function(){
-					$("a.ct-character-header-desktop__builder-link")[0].click();
-				});
-			}, 1000)
-		});
+				$(`#switch_gamelog`).click();
+			}, 20)
+	});	
+	$(".ct-sidebar__inner").off("click.removeCondition").on("click.removeCondition", ".remove-conditions-button", function(clickEvent) {
+		let conditionName = $(clickEvent.target).parent().find("span").text();
+			$('.ct-combat__statuses-group--conditions .ct-combat__summary-label:contains("Conditions"), .ct-combat-tablet__cta-button:contains("Conditions"), .ct-combat-mobile__cta-button:contains("Conditions")').click();
+			setTimeout(function(){
+				$('.ct-condition-manage-pane').css('visibility', 'hidden');
+				$(`.ct-sidebar__inner .ct-condition-manage-pane__condition-name:contains('${conditionName}') ~ .ct-condition-manage-pane__condition-toggle>[class*='styles_toggle'][aria-pressed="true"]`).click();
+			}, 10)
+			setTimeout(function(){
+				$(`#switch_gamelog`).click();
+			}, 20)
 
-		if (needs_ui) {
-			needs_ui = false;
-			window.PLAYER_NAME = $(".ddb-character-app-sn0l9p").text();
-			try {
-				// This should be just fine, but catch any parsing errors just in case
-				window.PLAYER_IMG = get_higher_res_url($(".ddbc-character-avatar__portrait").css("background-image").slice(4, -1).replace(/"/g, ""));
-			} catch {}
-			init_ui();
-			reposition_player_sheet();
-			monitor_character_sidebar_changes();
-			hide_player_sheet();
-			init_splash();
-			$("#loading_overlay").css("z-index", 0); // Allow them to see their character sheets, etc even if the DM isn't online yet
-			observe_character_sheet_aoe($(document));
-			observe_character_sheet_dice_rolls($(document));
-			// WIP to allow players to add in tokens from their extra tab
-			// observe_character_sheet_companion($(document));
+	});
+	$("a.ct-character-header-desktop__builder-link").on("click", function(){
+		setTimeout(function(){
+			$(".builder-sections-sheet-icon").off().on("click", function(){
+				window.location.href = `https://www.dndbeyond.com${$(".builder-sections-sheet-icon").attr("href")}?abovevtt=true`;
+			});
+		}, 1000)
+	});
+	$(".ct-character-header-info__content").on("click", function(){
+		setTimeout(function(){
+			$(".ct-pane-menu__item:contains('Manage Character & Levels')").replaceWith($(".ct-pane-menu__item:contains('Manage Character & Levels')").clone());
+			$(".ct-pane-menu__item:contains('Manage Character & Levels')").off().on("click", function(){
+				$("a.ct-character-header-desktop__builder-link")[0].click();
+			});
+		}, 1000)
+	});
 
-		} else {
-			init_controls();
-			init_sheet();
-			inject_chat_buttons();
-			init_zoom_buttons();
-			monitor_character_sidebar_changes();
-		}
-
-	}, 1000);
+	init_controls();
+	init_sheet();
+	inject_chat_buttons();
+	init_zoom_buttons();
+	monitor_character_sidebar_changes();
 }
 
 /**
@@ -2409,156 +2078,19 @@ function init_character_page_sidebar() {
  * Any time they do that, we need to react to those changes.
  */
 function monitor_character_sidebar_changes() {
-
-	$(".ct-character-header__group--game-log").click(function(event) {
+	let gameLogButton = $("div.ct-character-header__group--game-log.ct-character-header__group--game-log-last, [data-original-title='Game Log'] button")
+	 if(gameLogButton.length == 0){
+	   gameLogButton = $(`[d='M243.9 7.7c-12.4-7-27.6-6.9-39.9 .3L19.8 115.6C7.5 122.8 0 135.9 0 150.1V366.6c0 14.5 7.8 27.8 20.5 34.9l184 103c12.1 6.8 26.9 6.8 39.1 0l184-103c12.6-7.1 20.5-20.4 20.5-34.9V146.8c0-14.4-7.7-27.7-20.3-34.8L243.9 7.7zM71.8 140.8L224.2 51.7l152 86.2L223.8 228.2l-152-87.4zM48 182.4l152 87.4V447.1L48 361.9V182.4zM248 447.1V269.7l152-90.1V361.9L248 447.1z']`).closest('[role="button"]'); // this is a fall back to look for the gamelog svg icon and look for it's button.
+	 }
+	gameLogButton.click(function(event) {
 		if (event.originalEvent !== undefined) {
 			// the user actually clicked the button. Make sure we switch tabs
 			$("#switch_gamelog").click();
 		}
 	});
-
-	$(".ct-sidebar__portal").on("DOMNodeRemoved", function(event) {
-		// console.log(`sidebar removed: ${event.target.classList}`);
-		if ($(event.target).hasClass("ct-game-log-pane")) {
-			// the gamelog was removed to show character sheet details. Switch to it
-			setTimeout(function() {
-				change_sidbar_tab($("#switch_gamelog"), true);
-				// deselect the gamelog tab since we're not technically showing the gamelog
-				deselect_all_sidebar_tabs();
-				$("#switch_gamelog svg").attr("class", "gamelog-button__icon");
-			}, 0);
-		}
-	});
-	$(".ct-sidebar__portal").on("DOMNodeInserted", function(event) {
-		// console.log(`sidebar inserted: ${event.target.classList}`);
-		let addedElement = $(event.target);
-		if (addedElement.hasClass("ct-game-log-pane")) {
-			inject_chat_buttons();
-			window.MB.reprocess_chat_message_history();
-		}
-		if (addedElement.hasClass("ct-creature-pane")) {
-			scan_player_creature_pane(addedElement);
-		}
-
-		if (addedElement.closest(".ct-game-log-pane").length == 0 && addedElement.find(".ct-sidebar__header").length > 0 && addedElement.find(".ddbc-html-content").length > 0 && addedElement.find("#castbutton").length == 0) {
-			// we explicitly don't want this to happen in `.ct-game-log-pane` because otherwise it will happen to the injected gamelog messages that we're trying to send here
-			inject_sidebar_send_to_gamelog_button(addedElement);
-		}
-	});
-
-	$(".ct-sidebar__portal").on("DOMSubtreeModified", function(event) {
-		// console.log(`sidebar modified: ${event.target.classList}`);
-		let modifiedElement = $(event.target);
-		if (modifiedElement.hasClass("ct-sidebar__pane-content")) {
-			// The user clicked on something that shows details. Open the sidebar and show it
-			show_sidebar();
-		}
-	});
-	$(".ddbc-tab-list__content").on("DOMSubtreeModified", function(event) {
-		if (!is_player_sheet_full_width()) {
-			$(".ct-primary-box").css({ "height": "610px" });
-			$(".ddbc-tab-options__content").css({ "height": "510px" });
-			// these need a little more space due to the filter search bar
-			$(".ct-extras").css({ "height": "540px" });
-			$(".ct-equipment").css({ "height": "540px" });
-			$(".ct-spells").css({ "height": "540px" });
-		}
-	});
-
 }
 
-//
-/**
- * Add inject button into sidebar.
- *
- * When the user clicks on an item in a character sheet, the details are shown in a sidebar.
- * This will inject a "send to gamelog" button and properly send the pertinent sidebar content to the gamelog.
- * @param {DOMObject} sidebarPaneContent
- */
-function inject_sidebar_send_to_gamelog_button(sidebarPaneContent) {
-	// we explicitly don't want this to happen in `.ct-game-log-pane` because otherwise it will happen to the injected gamelog messages that we're trying to send here
-	console.log("inject_sidebar_send_to_gamelog_button")
-	let button = $(`<button id='castbutton'">SEND TO GAMELOG</button>`);
-	// button.css({
-	// 	"margin": "10px 0px",
-	// 	"border": "1px solid #bfccd6",
-	// 	"border-radius": "4px",
-	// 	"background-color": "transparent",
-	// 	"color": "#394b59"
-	// });
-	button.css({
-		"display": "flex",
-		"flex-wrap": "wrap",
-		"font-family": "Roboto Condensed,Roboto,Helvetica,sans-serif",
-		"cursor": "pointer",
-		"color": "#838383",
-		"line-height": "1",
-		"font-weight":" 700",
-		"font-size": "12px",
-		"text-transform": "uppercase",
-		"background-color": "#f2f2f2",
-		"margin": "3px 2px",
-		"border-radius": "3px",
-		"padding": "5px 7px",
-		"white-space": "nowrap"
-		})
-	$(button).hover(
-		function () {
-			button.css({
-					"background-color": "#5d5d5d",
-					"color": "#f2f2f2"
-			})
-		},
-		function () {
-			button.css({
-					"background-color": "#f2f2f2",
-					"color": "#5d5d5d"
-			})
-		}
-	);
 
-	sidebarPaneContent.prepend(button);
-	button.click(function() {
-		// make sure the button grabs dynamically. Don't hold HTML in the button click block because clicking on items back to back will fuck that up
-
-		let sidebar = sidebarPaneContent.closest(".ct-sidebar__portal");
-		let toInject = $(`<div></div>`);
-		toInject.attr("class", sidebarPaneContent.attr("class")); // set the class on our new element
-		// required
-		toInject.append(sidebar.find(".ct-sidebar__header").clone());
-
-		// these are optional, but if they're here, grab them
-		toInject.append(sidebarPaneContent.find(".ddbc-property-list").clone());
-		toInject.append(sidebarPaneContent.find(".ct-spell-detail__level-school").clone());
-		toInject.append(sidebarPaneContent.find(".ct-speed-manage-pane__speeds").clone());
-		toInject.append(sidebarPaneContent.find(".ct-armor-manage-pane__items").clone());
-
-		if (sidebarPaneContent.find(".ct-creature-pane__block").length > 0) {
-			// extras tab creatures need a little extra love
-			toInject.append(sidebarPaneContent.find(".ct-creature-pane__block").clone());
-			toInject.append(sidebarPaneContent.find(".ct-creature-pane__full-image").clone());
-			toInject.find(".ct-sidebar__header").css({
-				"margin-left": "20px",
-				"margin-right": "20px"
-			});
-		} else {
-			// required... unless it's an extras tab creature
-			toInject.append(sidebar.find(".ddbc-html-content").clone());
-		}
-
-		// now clean up any edit elements
-		toInject.find(".ct-container-pane__pencil").remove();
-
-		let html = window.MB.encode_message_text(toInject[0].outerHTML);
-		data = {
-			player: window.PLAYER_NAME,
-			img: window.PLAYER_IMG,
-			text: html
-		};
-		window.MB.inject_chat(data);
-		notify_gamelog();
-	});
-}
 
 /**
  * Add Dice buttons into sidebar.
@@ -2569,24 +2101,24 @@ function inject_sidebar_send_to_gamelog_button(sidebarPaneContent) {
  * @returns
  */
 function inject_chat_buttons() {
-	if ($(".glc-game-log").find("#chat-text").length > 0) {
+	const gameLog = $(".glc-game-log");
+	if (gameLog.find("#chat-text").length > 0) {
 		// make sure we only ever inject these once. This gets called a lot on the character sheet which is intentional, but just in case we accidentally call it too many times, let's log it, and return
 		return;
 	}
-	// AGGIUNGI CHAT
-	// the text has to be up against the left for it to style correctly
-	$(".glc-game-log").append($(`<div class='chat-text-wrapper sidebar-hover-text' data-hover="Dice Rolling Format: /cmd diceNotation action  &#xa;<br/>
-'/r 1d20'&#xa;<br/>
-'/roll 1d4 punch:damage'&#xa;<br/>
-'/hit 2d20kh1+2 longsword ADV'&#xa;<br/>
-'/dmg 1d8-2 longsword'&#xa;<br/>
-'/save 2d20kl1 DEX DISADV'&#xa;<br/>
-'/skill 1d20+1d4 Theives' Tools + Guidance'&#xa;<br/>
-Advantage: 2d20kh1 (keep highest)&#xa;<br/>
-Disadvantage: 2d20kl1 (keep lowest)&#xa;&#xa;<br/>
-'/w [playername] a whisper to playername'"><input id='chat-text' autocomplete="off" placeholder='Chat, /r 1d20+4..'></div>`));
 
-	$(".glc-game-log").append($(`
+	const chatTextWrapper = $(`<div class='chat-text-wrapper sidebar-hover-text' data-hover="Dice Rolling Format: /cmd diceNotation action  &#xa;
+		'/r 1d20'&#xa;
+		'/roll 1d4 punch:bludgeoning damage'&#xa;
+		'/hit 2d20kh1+2 longsword ADV'&#xa;
+		'/dmg 1d8-2 longsword:slashing'&#xa;
+		'/save 2d20kl1 DEX DISADV'&#xa;
+		'/skill 1d20+1d4 Thieves' Tools + Guidance'&#xa;
+		Advantage: 2d20kh1 (keep highest)&#xa;
+		Disadvantage: 2d20kl1 (keep lowest)&#xa;
+		'/w [playername] a whisper to playername'"><input id='chat-text' autocomplete="off" placeholder='Chat, /r 1d20+4..'></div>`
+	);
+  const diceRoller = $(`
 		<div class="dice-roller">
 			<div>
 				<img title="d4" alt="d4" height="40px" src="${window.EXTENSION_PATH + "assets/dice/d4.svg"}"/>
@@ -2610,10 +2142,24 @@ Disadvantage: 2d20kl1 (keep lowest)&#xa;&#xa;<br/>
 				<img title="d20" alt="d20" height="40px" src="${window.EXTENSION_PATH + "assets/dice/d20.svg"}"/>
 			</div>
 		</div>
-	`));
+	`)	
+	const languageSelect= $(`<select id='chat-language'></select>`)
+	const ignoredLanguages = ['All'];
+
+	const knownLanguages = get_my_known_languages();
+	for (const language of window.ddbConfigJson.languages) {
+		if (ignoredLanguages.includes(language.name))
+			continue;
+		if (!window.DM && !knownLanguages.includes(language.name))
+			continue;
+		const option = $(`<option value='${language.id}'>${language.name}</option>`)
+		languageSelect.append(option);
+	}
+
+	gameLog.append(chatTextWrapper, languageSelect, diceRoller);
 
 	$(".dice-roller > div img").on("click", function(e) {
-		if ($(".dice-toolbar__dropdown").length > 0) {
+		if ($(".dice-toolbar__dropdown").length > 0 && !window.EXPERIMENTAL_SETTINGS['rpgRoller']) {
 			// DDB dice are on the screen so let's use those. Ours will synchronize when these change.
 			if (!$(".dice-toolbar__dropdown").hasClass("dice-toolbar__dropdown-selected")) {
 				// make sure it's open
@@ -2633,48 +2179,112 @@ Disadvantage: 2d20kl1 (keep lowest)&#xa;&#xa;<br/>
 				$(this).parent().append(`<span class="dice-badge">${parseInt(dataCount) + 1}</span>`);
 			}
 			if ($(".dice-roller > div img[data-count]").length > 0) {
-				$(".roll-button").addClass("show");
+				if(!$(".roll-mod-container").hasClass('show')){
+					$(".roll-mod-container").addClass("show");
+					$(".roll-mod-container").find('input').val(0);
+				}
 			} else {
-				$(".roll-button").removeClass("show");
+				$(".roll-mod-container").removeClass("show");
 			}
 		}
 	});
 
-	$(".dice-toolbar__dropdown").on("DOMSubtreeModified", function() {
-		// Any time the DDB dice buttons change state, we want to synchronize our dice buttons to match theirs.
-		$(".dice-die-button").each(function() {
-			let dieSize = $(this).attr("data-dice");
-			let ourDiceElement = $(`.dice-roller > div img[alt='${dieSize}']`);
-			let diceCountElement = $(this).find(".dice-die-button__count");
-			ourDiceElement.parent().find("span").remove();
-			if (diceCountElement.length == 0) {
-				ourDiceElement.removeAttr("data-count");
-			} else {
-				let diceCount = parseInt(diceCountElement.text());
-				ourDiceElement.attr("data-count", diceCount);
-				ourDiceElement.parent().append(`<span class="dice-badge">${diceCount}</span>`);
-			}
-		})
+	
+	window.rollButtonObserver = new MutationObserver(function() {
+        // Any time the DDB dice buttons change state, we want to synchronize our dice buttons to match theirs.
 
-		// make sure our roll button is shown/hidden after all animations have completed
-		setTimeout(function() {
-			if ($(".dice-toolbar").hasClass("rollable")) {
-				$(".roll-button").addClass("show");
-			} else {
-				$(".roll-button").removeClass("show");
-			}
-		}, 0);
+		if (!window.EXPERIMENTAL_SETTINGS['rpgRoller']) {
+			$(".dice-die-button").each(function() {
+				let dieSize = $(this).attr("data-dice");
+				let ourDiceElement = $(`.dice-roller > div img[alt='${dieSize}']`);
+				let diceCountElement = $(this).find(".dice-die-button__count");
+				ourDiceElement.parent().find("span").remove();
+				if (diceCountElement.length == 0) {
+					ourDiceElement.removeAttr("data-count");
+				} else {
+					let diceCount = parseInt(diceCountElement.text());
+					ourDiceElement.attr("data-count", diceCount);
+					ourDiceElement.parent().append(`<span class="dice-badge">${diceCount}</span>`);
+				}
+			})
+
+
+			// make sure our roll button is shown/hidden after all animations have completed
+			setTimeout(function() {
+				if ($(".dice-toolbar").hasClass("rollable")) {
+					if(!$(".roll-mod-container").hasClass('show')){
+						$(".roll-mod-container").addClass("show");
+						$(".roll-mod-container").find('input').val(0);
+					}
+				} else {
+					$(".roll-mod-container").removeClass("show");
+				}
+			}, 0);
+		}
+    })
+
+	let watchForDicePanel = new MutationObserver((mutations) => {
+	 mutations.every((mutation) => {
+	    if (!mutation.addedNodes) return
+
+	    for (let i = 0; i < mutation.addedNodes.length; i++) {
+	      // do things to your newly added nodes here
+	      let node = mutation.addedNodes[i]
+	      if ((node.className == 'dice-rolling-panel' || $('.dice-rolling-panel').length>0)){
+	        const mutation_target = $(".dice-toolbar__dropdown")[0];
+			const mutation_config = { attributes: true, childList: true, characterData: true, subtree: true };
+			window.rollButtonObserver.observe(mutation_target, mutation_config);
+			watchForDicePanel.disconnect();
+			return false;
+	      }
+	    }
+	    return true // must return true if doesn't break
+	  })
 	});
+
+	window.sendToDefaultObserver = new MutationObserver(function() {
+    	localStorage.setItem(`${gameId}-sendToDefault`, gamelog_send_to_text());
+	})
+
+
+	let gamelogObserver = new MutationObserver((mutations) => {
+	 mutations.every((mutation) => {
+	    if (!mutation.addedNodes) return
+	    for (let i = 0; i < mutation.addedNodes.length; i++) {
+	      // do things to your newly added nodes here
+	      let node = mutation.addedNodes[i]
+	      if($(node).attr('class')?.includes('-SendToLabel') || $('.glc-game-log [class*="-SendToLabel"] ~ button').length>0){
+	      	const sendto_mutation_target = $(".glc-game-log [class*='-SendToLabel'] ~ button")[0];
+					const sendto_mutation_config = { attributes: true, childList: true, characterData: true, subtree: true };
+					window.sendToDefaultObserver.observe(sendto_mutation_target, sendto_mutation_config);
+					gamelogObserver.disconnect();
+					return false;
+	      }
+	    }
+	    return true // must return true if doesn't break
+	  })
+	});
+
+	watchForDicePanel.observe(document.body, {childList: true, subtree: true, attributes: false, characterData: false});
+	gamelogObserver.observe(document.body, {childList: true, subtree: true, attributes: false, characterData: false});
+
+	
+
+
+
+	
+
+	
 
 	$(".dice-roller > div img").on("contextmenu", function(e) {
 		e.preventDefault();
 
-		if ($(".dice-toolbar__dropdown").length > 0) {
+		if ($(".dice-toolbar__dropdown").length > 0 && !window.EXPERIMENTAL_SETTINGS['rpgRoller']) {
 			// There are DDB dice on the screen so update those buttons. Ours will synchronize when these change.
 			// the only way I could get this to work was with pure javascript. Everything that I tried with jQuery did nothing
 			let dieSize = $(this).attr("alt");
-			var element = $(`.dice-die-button[data-dice='${dieSize}']`)[0];
-			var e = element.ownerDocument.createEvent('MouseEvents');
+			let  element = $(`.dice-die-button[data-dice='${dieSize}']`)[0];
+			let  e = element.ownerDocument.createEvent('MouseEvents');
 			e.initMouseEvent('contextmenu', true, true,
 					element.ownerDocument.defaultView, 1, 0, 0, 0, 0, false,
 					false, false, false, 2, null);
@@ -2692,19 +2302,42 @@ Disadvantage: 2d20kl1 (keep lowest)&#xa;&#xa;<br/>
 				}
 			}
 			if ($(".dice-roller > div img[data-count]").length > 0) {
-				$(".roll-button").addClass("show");
+				if(!$(".roll-mod-container").hasClass('show')){
+					$(".roll-mod-container").addClass("show");
+					$(".roll-mod-container").find('input').val(0);
+				}
 			} else {
-				$(".roll-button").removeClass("show");
+				$(".roll-mod-container").removeClass("show");
 			}
 		}
 	});
 
 	if ($(".roll-button").length == 0) {
 		const rollButton = $(`<button class="roll-button">Roll</button>`);
-		$("body").append(rollButton);
-		rollButton.on("click", function (e) {
+		const modInput = $(`<div class='roll-mod-container'>
+				<button class="roll-button-mod minus">-</button>
+				<input class="roll-input-mod" type='number' value='0' step='1'></input>
+				<button class="roll-button-mod plus">+</button>
+			</div>`)
+		modInput.append(rollButton);
 
-			if ($(".dice-toolbar").hasClass("rollable")) {
+		
+		$("body").append(modInput);
+
+		modInput.off('click.button').on('click.button', 'button.roll-button-mod', function(e){
+			e.preventDefault();
+			const clickedButton = $(this)
+			const input = modInput.find('input');
+			if(clickedButton.hasClass('minus')){
+				input.val(parseInt(input.val())-1);
+			}
+			else if(clickedButton.hasClass('plus')){
+				input.val(parseInt(input.val())+1);
+			}
+		});
+		rollButton.on("click", function (e) {
+			let modValue = parseInt($('.roll-input-mod').val())
+			if ($(".dice-toolbar").hasClass("rollable") && modValue == 0 && !window.EXPERIMENTAL_SETTINGS['rpgRoller']) {
 				let theirRollButton = $(".dice-toolbar__target").children().first();
 				if (theirRollButton.length > 0) {
 					// we found a DDB dice roll button. Click it and move on
@@ -2717,11 +2350,12 @@ Disadvantage: 2d20kl1 (keep lowest)&#xa;&#xa;<br/>
 			$(".dice-roller > div img[data-count]").each(function() {
 				rollExpression.push($(this).attr("data-count") + $(this).attr("alt"));
 			});
-
+			let expression = `${rollExpression.join("+")}${modValue<0 ? modValue : `+${modValue}`}`
 			let sendToDM = window.DM || false;
-			let sentAsDDB = send_rpg_dice_to_ddb(rollExpression.join("+"), sendToDM);
+			let sentAsDDB = send_rpg_dice_to_ddb(expression, sendToDM);
 			if (!sentAsDDB) {
 				const roll = new rpgDiceRoller.DiceRoll(rollExpression.join("+"));
+				
 				const text = roll.output;
 				const uuid = new Date().getTime();
 				const data = {
@@ -2740,9 +2374,10 @@ Disadvantage: 2d20kl1 (keep lowest)&#xa;&#xa;<br/>
 						$(this).remove();
 					});
 				}
+						
 			}
 
-			$(".roll-button").removeClass("show");
+			$(".roll-mod-container").removeClass("show");
 			$(".dice-roller > div img[data-count]").removeAttr("data-count");
 			$(".dice-roller > div span").remove();
 		});
@@ -2752,7 +2387,6 @@ Disadvantage: 2d20kl1 (keep lowest)&#xa;&#xa;<br/>
 		window.chatObserver = new ChatObserver();
 	}
 	window.chatObserver.observe($("#chat-text"));
-
 	$(".GameLog_GameLog__2z_HZ").scroll(function() {
 		if ($(this).scrollTop() >= 0) {
 			$(this).removeClass("highlight-gamelog");
@@ -2775,6 +2409,8 @@ Disadvantage: 2d20kl1 (keep lowest)&#xa;&#xa;<br/>
 function init_ui() {
 	console.log("init_ui");
 
+	window.VTTMargin = 1000;
+
 	// ATTIVA GAMELOG
 	$(".sidebar__control").click(); // 15/03/2022 .. DDB broke the gamelog button.
 	$(".sidebar__control--lock").closest("span.sidebar__control-group.sidebar__control-group--lock > button").click(); // lock it open immediately. This is safe to call multiple times
@@ -2789,12 +2425,6 @@ function init_ui() {
 
 	inject_chat_buttons();
 
-	//s = $("<script src='https://meet.jit.si/external_api.js'></script>");
-	//$("#site").append(s);
-
-	s = $("<script src='https://www.youtube.com/iframe_api'></script>");
-	$("#site").append(s);
-
 	$("#site").append(`
 		<script type="text/javascript" src="/content/1-0-2027-0/js/libs/lightbox2/dist/js/lightbox.min.js"></script>
         <link rel="stylesheet" href="/content/1-0-2027-0/js/libs/lightbox2/dist/css/lightbox.min.css">
@@ -2806,18 +2436,51 @@ function init_ui() {
 	background.css("position", "absolute");
 	background.css("z-index", "10");
 
+	const mapItems = $("<div id='map_items'></div>");
+	mapItems.css("top", "0");
+	mapItems.css("left", "0");
+	mapItems.css("position", "absolute");
+	mapItems.css("z-index", "11");
+
+	const tokenMapItems = $("<div id='token_map_items'></div>")
+	tokenMapItems.css("top", "0");
+	tokenMapItems.css("left", "0");
+	tokenMapItems.css("position", "absolute");
+	tokenMapItems.css("z-index", "12");
+
 	const mapContainer = $("<div id='scene_map_container' />");
 	mapContainer.css("top", "0");
 	mapContainer.css("left", "0");
 	mapContainer.css("position", "absolute");
 
-
+	lightContainer = $("<div id='light_container'/>");
+	lightContainer.css("top", "0");
+	lightContainer.css("left", "0");
+	lightContainer.css("bottom", "0");
+	lightContainer.css("right", "0");
+	lightContainer.css("position", "absolute");
 
 	const drawOverlay = $("<canvas id='draw_overlay'></canvas>");
 	drawOverlay.css("position", "absolute");
 	drawOverlay.css("top", "0");
 	drawOverlay.css("left", "0");
 	drawOverlay.css("z-index", "18");
+
+	const lightOverlay = $("<canvas id='light_overlay'></canvas>");
+	lightOverlay.css("position", "absolute");
+	lightOverlay.css("top", "0");
+	lightOverlay.css("left", "0");
+	lightOverlay.css("z-index", "9");
+	lightOverlay.css("mix-blend-mode", "lighten");
+
+	const outer_light_container = $("<div id='outer_light_container'></canvas>");
+	outer_light_container.css("position", "absolute");
+	outer_light_container.css("top", "0");
+	outer_light_container.css("left", "0");
+	outer_light_container.css("z-index", "9");
+	outer_light_container.css("width", "100%");
+	outer_light_container.css("height", "100%");
+
 
 	const textDiv = $("<div id='text_div'></div>");
 	textDiv.css("position", "absolute");
@@ -2831,12 +2494,28 @@ function init_ui() {
 	grid.css("left", "0");
 	grid.css("z-index", "19");
 
+	const walls = $("<canvas id='walls_layer'></canvas>");
+	walls.css("position", "absolute");
+	walls.css("top", "0");
+	walls.css("left", "0");
+	walls.css("z-index", "19");
+
+	const elev = $("<canvas id='elev_overlay'></canvas>");
+	elev.css("position", "absolute");
+	elev.css("top", "0");
+	elev.css("left", "0");
+	elev.css("z-index", "19");
+
 
 	const fog = $("<canvas id='fog_overlay'></canvas>");
 	fog.css("top", "0");
 	fog.css("left", "0");
 	fog.css("position", "absolute");
 	fog.css("z-index", "21");
+
+
+	const rayCasting = $("<canvas id='raycastingCanvas'></canvas>");
+	rayCasting.css({"top": "0", "left": "0", "position": "absolute", "z-index": "22"});
 
 	// this overlay sits above other canvases, but below tempOverlay
 	// when peers stream their rulers, this canvas is where we draw them
@@ -2865,22 +2544,17 @@ function init_ui() {
 			return;
 		e.preventDefault();
 
-		var mousex = Math.round((e.pageX - 200) * (1.0 / window.ZOOM));
-		var mousey = Math.round((e.pageY - 200) * (1.0 / window.ZOOM));
+		let  mousex = Math.round((e.pageX - window.VTTMargin) * (1.0 / window.ZOOM));
+		let  mousey = Math.round((e.pageY - window.VTTMargin) * (1.0 / window.ZOOM));
 
 		console.log("mousex " + mousex + " mousey " + mousey);
-
-		let dataName = window.PLAYER_NAME.replace(/\"/g,'\\"')
-
-		let borderColor = $(`.token[data-name="`+dataName+`"]`).attr(`data-border-color`)
-		let pingColor = (typeof borderColor === 'undefined') ? "#000e #fffe #000e #fffe" : borderColor;
 
 		data = {
 			x: mousex,
 			y: mousey,
 			from: window.PLAYER_NAME,
 			dm: window.DM,
-			color: pingColor,
+			color: color_for_player_id(my_player_id()),
 			center_on_ping: $('#ping_center .ddbc-tab-options__header-heading').hasClass('ddbc-tab-options__header-heading--is-active')
 		}
 
@@ -2890,7 +2564,7 @@ function init_ui() {
 	});
 
 	// AVOID ANNOYING TEXT SELECTIONS
-	$("body").disableSelection();
+
 
 	/*fog.on("",function(){
 	//	if(!$("#select-button").hasClass("button-enabled"))
@@ -2903,20 +2577,22 @@ function init_ui() {
 	});
 
 	window.ZOOM = 1.0;
-	VTT = $("<div id='VTT' style='position:absolute; top:0px;left:0px;transform: scale(1.0);'/>");
+
+	
+	const VTT = $(`<div id='VTT' style='position:absolute; top:0px;left:0px;  '/>`);
 
 	//VTT.css("margin-left","200px");
 	//VTT.css("margin-top","200px");
 	//VTT.css("padding-right","400px");
 	//VTT.css("padding-bottom","400px");
 
-	tokens = $("<div id='tokens'></div>");
+	let tokens = $("<div id='tokens'></div>");
 	tokens.css("position", "absolute");
 	tokens.css("top", 0);
 	tokens.css("left", 0);
 
 	VTT.append(tokens);
-	VTT.append(background);
+
 	VTT.append(mapContainer);
 	VTT.append(peerOverlay);
 	VTT.append(fog);
@@ -2924,11 +2600,24 @@ function init_ui() {
 	VTT.append(drawOverlay);
 	VTT.append(textDiv);
 	VTT.append(tempOverlay);
+	VTT.append(walls);
+	VTT.append(elev);
+	mapItems.append(tokenMapItems);
+	mapContainer.append(outer_light_container);
+	mapContainer.append(mapItems);
 	mapContainer.append(darknessLayer);
+	outer_light_container.append(rayCasting);
+	outer_light_container.append(lightContainer);
+	lightContainer.append(lightOverlay);
+
+
+	mapItems.append(background);
+
+
 
 	wrapper = $("<div id='VTTWRAPPER'/>");
-	wrapper.css("margin-left", "200px");
-	wrapper.css("margin-top", "200px");
+	wrapper.css("margin-left", `${window.VTTMargin}px`);
+	wrapper.css("margin-top", `${window.VTTMargin}px`);
 	wrapper.css("paddning-right", "200px");
 	wrapper.css("padding-bottom", "200px");
 	wrapper.css("position", "absolute");
@@ -2941,22 +2630,16 @@ function init_ui() {
 	$("body").append(wrapper);
 
 	black_layer = $("<div id='black_layer'/>");
-	black_layer.width(window.width);
-	black_layer.height(window.height);
+	black_layer.width(window.width+window.VTTMargin);
+	black_layer.height(window.height+window.VTTMargin);
 	black_layer.css("position", "absolute");
 	black_layer.css("top", "0px");
 	black_layer.css("left", "0px");
 	black_layer.css("background", "black");
 	black_layer.css("opacity", "0");
 	$("body").append(black_layer);
-	black_layer.animate({ opacity: "1" }, 5000);
+	black_layer.animate({ opacity: "1" }, 1000);
 	black_layer.css("z-index", "1");
-
-	if(DM && window.CLOUD){
-		setTimeout(function(){
-			window.MB.sendMessage("custom/myVTT/dmjoin"); // join and ask for the scene list
-		},4000);
-	}
 
 	init_controls();
 	init_sheet();
@@ -2968,7 +2651,7 @@ function init_ui() {
 			init_player_sheet(window.PLAYER_SHEET);
 			report_connection();
 		}
-		enable_peer_manager();
+		configure_peer_manager_from_settings();
 	}, 5000);
 
 	$(".sidebar__pane-content").css("background", "rgba(255,255,255,1)");
@@ -2984,30 +2667,29 @@ function init_ui() {
 
 	window.WaypointManager=new WaypointManagerClass();
 
-	if (window.DM) {
-		setTimeout(function() {
-			if(!window.CLOUD){
-				window.ScenesHandler.switch_scene(window.ScenesHandler.current_scene_id, ct_load); // LOAD THE SCENE AND PASS CT_LOAD AS CALLBACK
-			}
-		}, 5000);
-	}
+	// TODO: I don't think this needs to be a timeout any more. Figure what window.STARTING does and make this better
 	setTimeout(function() {
 		window.STARTING = false;
 	}, 6000);
 
 
 
-	create_jitsi_button();
 
 	// EXPERRIMENTAL DRAG TO MOVE
-	var curDown = false,
+	let  curDown = false,
 		curYPos = 0,
 		curXPos = 0;
 
 	// Function separated so it can be dis/enabled
 	function mousemove(m) {
 		if (curDown) {
-			window.scrollBy(curXPos - m.pageX, curYPos - m.pageY)
+			let scrollOptions = {
+				left: window.scrollX + curXPos - m.pageX,
+				top: window.scrollY + curYPos - m.pageY
+			}
+			requestAnimationFrame(function(){
+				window.scrollTo(scrollOptions)
+			});
 		}
 	}
 
@@ -3019,13 +2701,13 @@ function init_ui() {
 		if (m.button == 2) { // ONLY THE RIGHT CLICK
 			if($(m.target).closest($(".context-menu-root")).length>0 ) // AVOID RIGHT CLICK TRAP
 				return;
-			//e.preventDefault();
 			curDown = true;
-			$("body").css("cursor", "grabbing");
+			$("#VTT, #black_layer").css("cursor", "grabbing");
 			//cover iframes so you can drag through windows
-			if (get_avtt_setting_value("iframeStatBlocks") === true) {
+			const openDraggables = $("#resizeDragMon");
+			if (openDraggables.find('iframe').length>0) {
 				// iframes yoink the right-click drag when you're moving the map. The non-iframe stat blocks don't need to worry about this
-				$("#resizeDragMon").append($('<div class="iframeResizeCover"></div>'));
+				openDraggables.append($('<div class="iframeResizeCover"></div>'));
 			}
 			$("#sheet").append($('<div class="iframeResizeCover"></div>'));
 			//return false;
@@ -3034,8 +2716,9 @@ function init_ui() {
 
 	// Function separated so it can be dis/enabled
 	function mouseup(event) {
+		
 		curDown = false;
-		$("body").css("cursor", "");
+		$("#VTT, #black_layer").css("cursor", "");
 		//remove iframe cover that prevents mouse interaction
 		$('.iframeResizeCover').remove();
 		if (event.target.tagName.toLowerCase() !== 'a') {
@@ -3098,33 +2781,7 @@ function init_ui() {
 
 	init_help_menu();
 
-	$("ol.tss-jmihpx-GameLogEntries").on("DOMNodeInserted", function(addedEvent) {
-		let injectedElement = $(addedEvent.target);
-		if (injectedElement.hasClass("tss-1wcf5kt-Line-Notation") || injectedElement.hasClass("tss-16k6xf2-Line-Breakdown")) {
-			let gamelogItem = injectedElement.closest("li");
-			replace_gamelog_message_expressions(gamelogItem);
-		}
-	});
 
-	if (window.DM) {
-		// LOAD DDB CHARACTER TOOLS FROM THE PAGE ITSELF. Avoid loading external scripts as requested by firefox review
-		let old=$("[src*=mega-menu]:nth-of-type(2)");
-		let s=old.attr("src");
-		let el=$("<"+old.prop('nodeName')+">");
-		el.attr("src",s.replace(/mega.*bundle/,'character-tools/vendors~characterTools.bundle.dec3c041829e401e5940.min'));
-		$("#site").append(el);
-		setTimeout(function(){
-			console.log(2);
-			retriveRules();
-			loadModules(initalModules);
-		},10000);
-		setTimeout(get_pclist_player_data,25000);
-	}
-
-	if(window.DM && (!window.CLOUD)){
-		alert("YOUR SCENES ARE BEING MIGRATED TO THE CLOUD IN 20 SECONDS. AFTER THIS MIGRATION YOU'LL FIND YOUR SCENES ON THE RIGHT PANEL.");
-		setTimeout(cloud_migration,20000);
-	}
 }
 
 const DRAW_COLORS = ["#D32F2F", "#FB8C00", "#FFEB3B", "#9CCC65", "#039BE5",
@@ -3140,21 +2797,26 @@ function init_buttons() {
 	if ($("#fog_menu").length > 0) {
 		return; // only need to do this once
 	}
-	buttons = $(`<div class="ddbc-tab-options--layout-pill"></div>`);
+	let buttons = $(`<div class="ddbc-tab-options--layout-pill"></div>`);
 	$("body").append(buttons);
 
 	buttons.append($("<button style='display:inline; width:75px;' id='select-button' class='drawbutton hideable ddbc-tab-options__header-heading' data-shape='rect' data-function='select'><u>S</u>ELECT</button>"));
 
-	buttons.append($("<button style='display:inline;width:75px;' id='measure-button' class='drawbutton hideable ddbc-tab-options__header-heading' data-shape='line' data-function='measure'><u>R</u>ULER</button>"));
-
+	init_ruler_menu(buttons);
+	
 	if (window.DM) {
 		init_fog_menu(buttons)
-		init_draw_menu(buttons)
-		init_text_button(buttons)
+		init_walls_menu(buttons)
+		init_elev_menu(buttons)
+		init_vision_menu(buttons)
+	}
+	init_draw_menu(buttons)
 
+	if (window.DM) {
+		init_text_button(buttons)
 	}
 
-	setup_aoe_button();
+	setup_aoe_button(buttons);
 	handle_drawing_button_click();
 
 	buttons.append("<button style='display:inline;width:75px' id='help_button' class='hideable ddbc-tab-options__header-heading'>HELP</button>");
@@ -3168,11 +2830,8 @@ function init_buttons() {
 
 	$(".GameLogHeader_Container__36cXS").hide();
 
-	// STREAMING STUFF
 
-	window.STREAMPEERS = {};
-	window.MYSTREAMID = uuid();
-	window.JOINTHEDICESTREAM = false;
+	
 
 	init_keypress_handler();
 }
@@ -3188,9 +2847,66 @@ function init_zoom_buttons() {
 	}
 
 	// ZOOM BUTTON
-	zoom_section = $("<div id='zoom_buttons' />");
-
+	let zoom_section = $("<div id='zoom_buttons' />");
+	const youtube_controls_button = $(`<div id='youtube_controls_button' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='Quick toggle youtube controls'></div>`);
+	youtube_controls_button.click(function (event) {
+		console.log("youtube_controls_button", event);
+		const iconWrapper = $(event.currentTarget).find(".ddbc-tab-options__header-heading");
+		if (iconWrapper.hasClass('ddbc-tab-options__header-heading--is-active')) {
+			iconWrapper.removeClass('ddbc-tab-options__header-heading--is-active');
+			$(`#scene_map_container`).css('z-index', '');
+			$(`#fog_overlay`).css('z-index', '21');
+		} else {
+			iconWrapper.addClass('ddbc-tab-options__header-heading--is-active');
+			$(`#fog_overlay`).css('z-index', '101');
+			$(`#scene_map_container`).css('z-index', '100');
+		}
+	});	
+	youtube_controls_button.append(`<div class="ddbc-tab-options__header-heading"><span style="font-size: 20px;" class="material-symbols-outlined">video_settings</span></div>`);
+	
+	zoom_section.append(youtube_controls_button);
 	if(window.DM) {
+
+		const projector_toggle = $(`<div id='projector_toggle' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='Quick toggle projector mode'></div>`);
+		projector_toggle.click(function (event) {
+			console.log("projector_toggle", event);
+			const iconWrapper = $(event.currentTarget).find(".ddbc-tab-options__header-heading");
+			if (iconWrapper.hasClass('ddbc-tab-options__header-heading--is-active')) {
+				iconWrapper.removeClass('ddbc-tab-options__header-heading--is-active');
+				window.ProjectorEnabled = false;
+			} else {
+				iconWrapper.addClass('ddbc-tab-options__header-heading--is-active');
+				window.ProjectorEnabled = false;
+			}
+		});
+		projector_toggle.append(`<div class="ddbc-tab-options__header-heading"><span style="font-size: 20px;" class="material-symbols-outlined">cast</span></div>`);
+		
+		const projector_zoom_lock = $(`<div id='projector_zoom_lock' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='Quick toggle projector zoom lock'></div>`);
+		projector_zoom_lock.click(function (event) {
+			console.log("projector_toggle", event);
+			const iconWrapper = $(event.currentTarget).find(".ddbc-tab-options__header-heading");
+			if (iconWrapper.hasClass('ddbc-tab-options__header-heading--is-active')) {
+				iconWrapper.removeClass('ddbc-tab-options__header-heading--is-active');
+			} else {
+				iconWrapper.addClass('ddbc-tab-options__header-heading--is-active');
+			}
+		});
+		projector_zoom_lock.append(`<div class="ddbc-tab-options__header-heading" style='display: flex;align-content: center;align-items: center;justify-content: space-evenly;'>
+			<span class="material-symbols-outlined" style='font-size: 14px;padding: 3px;'>
+				lock
+			</span>
+			<span style="font-size: 38px;position: absolute;" class="material-symbols-outlined">
+				expand_content
+			</span>
+		</div>`);
+		
+
+		zoom_section.append(projector_zoom_lock, projector_toggle);
+		if (get_avtt_setting_value("projector")) {
+			projector_toggle.toggleClass('enabled', true);
+			projector_zoom_lock.toggleClass('enabled', true);
+		}
+
 		const cursor_ruler_toggle = $(`<div id='cursor_ruler_toggle' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='Send Cursor/Ruler To Players'></div>`);
 		cursor_ruler_toggle.click(function (event) {
 			console.log("cursor_ruler_toggle", event);
@@ -3206,7 +2922,7 @@ function init_zoom_buttons() {
 		cursor_ruler_toggle.append(`<div class="ddbc-tab-options__header-heading ddbc-tab-options__header-heading--is-active"><span style="font-size: 20px;" class="material-symbols-outlined">left_click</span></div>`);
 		zoom_section.append(cursor_ruler_toggle);
 		if (!get_avtt_setting_value("peerStreaming")) {
-			cursor_ruler_toggle.hide();
+			cursor_ruler_toggle.css("display", "none");
 		}
 
 		const ping_center = $(`<div id='ping_center' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='Center Player View on Pings'> 
@@ -3229,7 +2945,106 @@ function init_zoom_buttons() {
 			}
 		});
 
-		pause_players = $(`<div id='pause_players' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='Pause players'> 
+
+		let select_locked = $(`<div id='select_locked' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='Toggle Locked Tokens Selectable'> 
+		<div class="ddbc-tab-options__header-heading ddbc-tab-options__header-heading--is-active">
+				<svg version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="20px" height="20px" x="0px" y="0px"
+		 viewBox="0 0 24 24" style="enable-background:new 0 0 24 24;" xml:space="preserve">
+			<style type="text/css">
+				#select_locked .st0{fill:none;}
+				#select_locked .st1{fill-rule:evenodd;clip-rule:evenodd;fill:#7f7f7f;}
+			</style>
+			<path d="M7,20.6c-0.5,0-0.9-0.2-1.2-0.5s-0.5-0.7-0.5-1.2v-8.3c0-0.5,0.2-0.8,0.5-1.2C6.1,9.1,6.5,8.9,7,8.9h0.8V7.3
+				c0-1.2,0.4-2.1,1.2-2.9s1.8-1.2,3-1.2c1.2,0,2.2,0.4,3,1.2s1.2,1.8,1.2,2.9v1.7h0.8c0.5,0,0.9,0.2,1.2,0.5c0.3,0.3,0.5,0.7,0.5,1.2
+				v8.3c0,0.5-0.2,0.8-0.5,1.2c-0.3,0.3-0.7,0.5-1.2,0.5H7z M7,18.9h10.1v-8.3H7V18.9z M12.1,16.4c0.5,0,0.9-0.2,1.2-0.5
+				c0.3-0.3,0.5-0.7,0.5-1.2c0-0.5-0.2-0.8-0.5-1.2s-0.7-0.5-1.2-0.5c-0.5,0-0.9,0.2-1.2,0.5c-0.3,0.3-0.5,0.7-0.5,1.2
+				c0,0.5,0.2,0.8,0.5,1.2C11.2,16.2,11.6,16.4,12.1,16.4z M9.5,8.9h5.1V7.3c0-0.7-0.2-1.3-0.7-1.8c-0.5-0.5-1.1-0.7-1.8-0.7
+				c-0.7,0-1.3,0.2-1.8,0.7S9.5,6.6,9.5,7.3V8.9z M7,18.9v-8.3V18.9z"/>
+			<g>
+				<g>
+					<g>
+						<g>
+							<g>
+								<g>
+									<rect x="-6" y="9" class="st0" width="15" height="6"/>
+								</g>
+								<rect x="1" y="9.4" class="st1" width="1.5" height="1.1"/>
+								<rect x="1" y="11.4" class="st1" width="1.5" height="1.1"/>
+								<rect x="1" y="13.4" class="st1" width="1.5" height="1.1"/>
+							</g>
+						</g>
+						<g>
+							<g>
+								<g>
+									<rect x="9" y="-6" class="st0" width="6" height="15"/>
+								</g>
+								<rect x="13.4" y="1" class="st1" width="1.1" height="1.5"/>
+								<rect x="11.4" y="1" class="st1" width="1.1" height="1.5"/>
+								<rect x="9.5" y="1" class="st1" width="1.1" height="1.5"/>
+							</g>
+						</g>
+						<g>
+							<g>
+								<g>
+									<rect x="15" y="9" class="st0" width="15" height="6"/>
+								</g>
+								<rect x="21.5" y="13.4" class="st1" width="1.5" height="1.1"/>
+								<rect x="21.5" y="11.4" class="st1" width="1.5" height="1.1"/>
+								<rect x="21.5" y="9.5" class="st1" width="1.5" height="1.1"/>
+							</g>
+						</g>
+						<g>
+							<g>
+								<g>
+									<rect x="9" y="15" class="st0" width="6" height="15"/>
+								</g>
+								<rect x="9.4" y="21.5" class="st1" width="1.1" height="1.5"/>
+								<rect x="11.4" y="21.5" class="st1" width="1.1" height="1.5"/>
+								<rect x="13.4" y="21.5" class="st1" width="1.1" height="1.5"/>
+							</g>
+						</g>
+						<g>
+							<rect x="0.9" y="5.5" class="st1" width="1.5" height="2.5"/>
+							<polygon class="st1" points="0.9,1 0.9,3.5 2.4,3.5 2.4,2.5 3.4,2.5 3.4,1 				"/>
+							<rect x="5.4" y="1" class="st1" width="2.5" height="1.5"/>
+						</g>
+						<g>
+							<rect x="16" y="0.9" class="st1" width="2.5" height="1.5"/>
+							<polygon class="st1" points="23,0.9 20.5,0.9 20.5,2.4 21.5,2.4 21.5,3.4 23,3.4 				"/>
+							<rect x="21.5" y="5.4" class="st1" width="1.5" height="2.5"/>
+						</g>
+						<g>
+							<rect x="21.6" y="16" class="st1" width="1.5" height="2.5"/>
+							<polygon class="st1" points="23.1,23 23.1,20.5 21.6,20.5 21.6,21.5 20.6,21.5 20.6,23 				"/>
+							<rect x="16.1" y="21.5" class="st1" width="2.5" height="1.5"/>
+						</g>
+						<g>
+							<rect x="5.5" y="21.6" class="st1" width="2.5" height="1.5"/>
+							<polygon class="st1" points="1,23.1 3.5,23.1 3.5,21.6 2.5,21.6 2.5,20.6 1,20.6 				"/>
+							<rect x="1" y="16.1" class="st1" width="1.5" height="2.5"/>
+						</g>
+					</g>
+				</g>
+			</g>
+			</svg>
+		</div></div>
+		`);
+	
+		select_locked.click(async function(){
+			if ($('#select_locked .ddbc-tab-options__header-heading').hasClass('ddbc-tab-options__header-heading--is-active')) {
+				$('#select_locked .ddbc-tab-options__header-heading').toggleClass('ddbc-tab-options__header-heading--is-active', false)
+				$('body').toggleClass('preventSelectDefinitelyNot', true);
+				$('#tokens .lockedToken').draggable("disable");
+				$('#tokens .lockedToken').removeClass("ui-state-disabled");	
+			} else {
+				$('#select_locked .ddbc-tab-options__header-heading').toggleClass('ddbc-tab-options__header-heading--is-active', true)
+				$('body').toggleClass('preventSelectDefinitelyNot', false);
+				$('#tokens .lockedToken').draggable("enable");
+			}
+		});
+	
+
+		let pause_players = $(`<div id='pause_players' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='Pause players'> 
 		<div class="ddbc-tab-options__header-heading">
 				<svg id='player-pause-svg' xmlns="http://www.w3.org/2000/svg" height="20" width="20"><path d="M11.583 15.833V4.167H15v11.666Zm-6.583 0V4.167h3.417v11.666Z"/></svg>
 				<svg id='player-play-svg' xmlns="http://www.w3.org/2000/svg" height="20" width="20"><path d="M7 15.5v-11l8.5 5.5Zm1.521-5.521ZM8.5 12.75 12.75 10 8.5 7.25Z"/></svg>
@@ -3255,24 +3070,91 @@ function init_zoom_buttons() {
 			}
 		});
 
-		zoom_section.append(ping_center);
-		zoom_section.append(pause_players);
+		zoom_section.append(select_locked, ping_center, pause_players);
 	}
 
-	zoom_center = $("<div id='zoom_fit' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='fit screen (0)'><div class='ddbc-tab-options__header-heading'><span class='material-icons button-icon'>fit_screen</span></div></div>");
+
+	let grid_snap_drawings = $(`<div id='grid_snap_drawings' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='Grid Snap Drawings'> 
+	<div class="ddbc-tab-options__header-heading">
+			<span style="font-size: 20px;" class="material-symbols-outlined">
+				rebase_edit
+			</span>
+	</div></div>
+	`);
+
+	grid_snap_drawings.click(async function(){
+		if ($('#grid_snap_drawings .ddbc-tab-options__header-heading').hasClass('ddbc-tab-options__header-heading--is-active')) {
+			$('#grid_snap_drawings .ddbc-tab-options__header-heading').toggleClass('ddbc-tab-options__header-heading--is-active', false)
+			window.toggleDrawingSnap = false;
+		} else {
+			$('#grid_snap_drawings .ddbc-tab-options__header-heading').toggleClass('ddbc-tab-options__header-heading--is-active', true)
+			window.toggleDrawingSnap = true;
+		}
+	});
+	zoom_section.append(grid_snap_drawings)
+
+	let selected_token_vision = $(`<div id='selected_token_vision' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='Selected Token Vision'> 
+	<div class="ddbc-tab-options__header-heading">
+			<svg version="1.1" id="selectedEyeSVG" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="20px" height="20px" x="0px" y="0px"
+				 viewBox="0 0 800 800" style="enable-background:new 0 0 800 800;" xml:space="preserve">
+			<style type="text/css">
+				#selected_token_vision .st0{fill:none;stroke:#000000;stroke-width:20;stroke-linecap:square;stroke-miterlimit:10;}
+				#selected_token_vision .st1{fill:none;stroke:#000000;stroke-width:20;stroke-linecap:square;stroke-miterlimit:10;stroke-dasharray:70,70;}
+			</style>
+			<g>
+				<path d="M681.9,382.8l-59.7-58.3C563,266.7,484.1,235,399.9,235s-163,31.8-222.2,89.5L118,382.8c-13.3,14.5-5.1,30,0,34.5
+					l59.7,58.3c59.1,57.7,138,89.5,222.2,89.5s163-31.8,222.2-89.5l59.7-58.3C686.6,412.8,695.7,397.9,681.9,382.8L681.9,382.8z
+					 M399.9,482.4c-45.5,0-82.4-37-82.4-82.4s37-82.4,82.4-82.4s82.4,37,82.4,82.4S445.4,482.4,399.9,482.4z M169.4,400l42.1-41.1
+					c31.9-31.2,70.6-53.4,113-65.4c-33.3,23.7-55,62.6-55,106.4s21.7,82.8,55,106.4c-42.4-12-81.1-34.2-113-65.3L169.4,400L169.4,400z
+					 M588.5,441.1c-31.9,31-70.6,53.2-113,65.3c33.3-23.7,55-62.6,55-106.4c0-43.9-21.7-82.8-55-106.4c42.4,12,81.1,34.2,113,65.4
+					l42,41.1L588.5,441.1L588.5,441.1z"/>
+			</g>
+			<g>
+				<g>
+					<polyline class="st0" points="750,715 750,750 715,750 		"/>
+					<line class="st1" x1="645" y1="750" x2="120" y2="750"/>
+					<polyline class="st0" points="85,750 50,750 50,715 		"/>
+					<line class="st1" x1="50" y1="645" x2="50" y2="120"/>
+					<polyline class="st0" points="50,85 50,50 85,50 		"/>
+					<line class="st1" x1="155" y1="50" x2="680" y2="50"/>
+					<polyline class="st0" points="715,50 750,50 750,85 		"/>
+					<line class="st1" x1="750" y1="155" x2="750" y2="680"/>
+				</g>
+			</g>
+			</svg>
+	</div></div>
+	`);
+
+
+
+	selected_token_vision.click(async function(){
+		if ($('#selected_token_vision .ddbc-tab-options__header-heading').hasClass('ddbc-tab-options__header-heading--is-active')) {
+			$('#selected_token_vision .ddbc-tab-options__header-heading').toggleClass('ddbc-tab-options__header-heading--is-active', false)
+			window.SelectedTokenVision = false;
+		} else {
+			$('#selected_token_vision .ddbc-tab-options__header-heading').toggleClass('ddbc-tab-options__header-heading--is-active', true)
+			window.SelectedTokenVision = true;
+		}
+		await redraw_light();	
+	});
+
+	zoom_section.append(selected_token_vision);
+
+
+	let zoom_center = $("<div id='zoom_fit' class='ddbc-tab-options--layout-pill hasTooltip button-icon hideable' data-name='fit screen (0)'><div class='ddbc-tab-options__header-heading'><span class='material-icons button-icon'>fit_screen</span></div></div>");
 	zoom_center.click(reset_zoom);
 	zoom_section.append(zoom_center);
 
-	zoom_minus = $("<div id='zoom_minus' class='ddbc-tab-options--layout-pill'><div class='ddbc-tab-options__header-heading hasTooltip button-icon hideable' data-name='zoom out (-)'><span class='material-icons button-icon'>zoom_out</span></div></div>");
+	let zoom_minus = $("<div id='zoom_minus' class='ddbc-tab-options--layout-pill'><div class='ddbc-tab-options__header-heading hasTooltip button-icon hideable' data-name='zoom out (-)'><span class='material-icons button-icon'>zoom_out</span></div></div>");
 
 	zoom_minus.click(decrease_zoom)
 	zoom_section.append(zoom_minus);
 
-	zoom_plus = $("<div id='zoom_plus' class='ddbc-tab-options--layout-pill'><div class='ddbc-tab-options__header-heading hasTooltip button-icon hideable' data-name='zoom in (+)'><span class='material-icons button-icon'>zoom_in</span></div></div>");
+	let zoom_plus = $("<div id='zoom_plus' class='ddbc-tab-options--layout-pill'><div class='ddbc-tab-options__header-heading hasTooltip button-icon hideable' data-name='zoom in (+)'><span class='material-icons button-icon'>zoom_in</span></div></div>");
 	zoom_plus.click(increase_zoom);
 	zoom_section.append(zoom_plus);
 
-	hide_interface = $(`<div id='hide_interface_button' class='ddbc-tab-options--layout-pill'><div class='ddbc-tab-options__header-heading hasTooltip button-icon' data-name='Unhide interface (shift+h)'><span class='material-icons md-16 button-icon'>visibility</span></div></div>`);
+	let hide_interface = $(`<div id='hide_interface_button' class='ddbc-tab-options--layout-pill'><div class='ddbc-tab-options__header-heading hasTooltip button-icon' data-name='Unhide interface (shift+h)'><span class='material-icons md-16 button-icon'>visibility</span></div></div>`);
 	hide_interface.click(unhide_interface);
 	hide_interface.css("display", "none");
 	hide_interface.css("position", "absolute");
@@ -3282,9 +3164,9 @@ function init_zoom_buttons() {
 
 	$(".avtt-sidebar-controls").append(zoom_section);
 	if (window.DM) {
-		zoom_section.css("left","-208px");
+		zoom_section.css("right","371px");
 	} else {
-		zoom_section.css("left","-170px");
+		zoom_section.css("right","420px");
 	}
 }
 
@@ -3296,14 +3178,17 @@ function init_zoom_buttons() {
  * See `Load.js` for the injection of the overlay.
  */
 function init_loading_overlay_beholder() {
+
+	if ($("#loading-overlay-beholder").length > 0) return;
+
 	let loadingText = "One Moment While We Set The Scene...";
 	if (is_characters_page()) {
 		loadingText = "We'll Set The Scene When The DM Is Ready.";
 	}
 	let loadingIndicator = $(`
-		<div>
+		<div id="loading-overlay-beholder">
 			<div class="sidebar-panel-loading-indicator" style="padding:0px;border-radius:40px;">
-				<svg class="beholder-dm-screen loading-status-indicator__svg animate" viewBox="0 0 285 176" fill="none" xmlns="http://www.w3.org/2000/svg" style="overflow:overlay;margin-top:100px;width:100%;position:relative;padding:0 10%;"><defs><path id="beholder-eye-move-path" d="M0 0 a 15 5 0 0 0 15 0 a 15 5 0 0 1 -15 0 z"></path><clipPath id="beholder-eye-socket-clip-path"><path id="eye-socket" fill-rule="evenodd" clip-rule="evenodd" d="M145.5 76c-8.562 0-15.5-7.027-15.5-15.694 0-8.663 6.938-1.575 15.5-1.575 8.562 0 15.5-7.088 15.5 1.575C161 68.973 154.062 76 145.5 76z"></path></clipPath></defs><g class="beholder-dm-screen__beholder"><path fill-rule="evenodd" clip-rule="evenodd" d="M145.313 77.36c-10.2 0-18.466-8.27-18.466-18.47 0-10.197 8.266-1.855 18.466-1.855 10.199 0 18.465-8.342 18.465 1.855 0 10.2-8.266 18.47-18.465 18.47m59.557 4.296l-.083-.057c-.704-.5-1.367-1.03-1.965-1.59a12.643 12.643 0 0 1-1.57-1.801c-.909-1.268-1.51-2.653-1.859-4.175-.355-1.521-.461-3.179-.442-4.977.007-.897.049-1.835.087-2.827.038-.995.079-2.032.053-3.194-.031-1.158-.11-2.445-.519-3.97a10.494 10.494 0 0 0-1.014-2.43 8.978 8.978 0 0 0-1.938-2.32 9.64 9.64 0 0 0-2.468-1.54l-.314-.137-.299-.114-.609-.212c-.382-.105-.787-.227-1.151-.298-1.495-.315-2.819-.383-4.065-.39-1.248-.004-2.407.087-3.534.2a56.971 56.971 0 0 0-3.18.44c-6.271.646-12.648 1.559-13.689-.837-1.079-2.487-3.35-8.058 3.115-12.19 4.076.154 8.141.347 12.179.62 1.461.098 2.914.212 4.36.34-4.614.924-9.314 1.7-14.019 2.43h-.015a2.845 2.845 0 0 0-2.388 3.066 2.84 2.84 0 0 0 3.088 2.574c5.125-.462 10.25-.973 15.416-1.696 2.592-.378 5.17-.776 7.88-1.42a29.7 29.7 0 0 0 2.108-.59c.181-.06.363-.117.56-.193.197-.072.378-.136.594-.227.208-.09.405-.17.643-.291l.345-.174.394-.235c.064-.042.124-.076.196-.125l.235-.174.235-.174.117-.099.148-.136c.098-.094.189-.189.283-.287l.137-.152a3.44 3.44 0 0 0 .166-.22c.114-.154.224-.317.318-.484l.072-.125.038-.064.042-.09a5.06 5.06 0 0 0 .367-1.154c.045-.308.06-.63.045-.944a4.322 4.322 0 0 0-.042-.458 5.19 5.19 0 0 0-.386-1.207 5.356 5.356 0 0 0-.499-.799l-.091-.117-.072-.083a5.828 5.828 0 0 0-.303-.318l-.155-.151-.083-.076-.057-.05a9.998 9.998 0 0 0-.503-.382c-.152-.102-.28-.178-.424-.265l-.205-.124-.181-.091-.36-.186a18.713 18.713 0 0 0-.643-.28l-.591-.23c-1.521-.538-2.853-.856-4.197-1.159a83.606 83.606 0 0 0-3.951-.772c-2.604-.45-5.185-.829-7.763-1.166-4.273-.564-8.531-1.029-12.785-1.46 0-.004-.004-.004-.004-.004a38.55 38.55 0 0 0-4.81-3.1v-.004c.397-.223.965-.424 1.688-.549 1.135-.208 2.551-.242 4.05-.185 3.024.11 6.366.59 10.022.662 1.832.02 3.781-.056 5.84-.56a12.415 12.415 0 0 0 3.081-1.188 10.429 10.429 0 0 0 2.702-2.135 2.841 2.841 0 0 0-3.774-4.205l-.208.152c-.825.594-1.76.87-2.956.942-1.188.068-2.566-.09-4.004-.367-2.907-.553-6.003-1.556-9.5-2.32-1.763-.371-3.644-.7-5.802-.73a16.984 16.984 0 0 0-3.455.298 13.236 13.236 0 0 0-3.774 1.333 13.065 13.065 0 0 0-3.376 2.615 14.67 14.67 0 0 0-1.646 2.154h-.004a41.49 41.49 0 0 0-8.436-.863c-1.518 0-3.017.079-4.489.238-1.79-1.563-3.444-3.198-4.833-4.913a21.527 21.527 0 0 1-1.4-1.903 15.588 15.588 0 0 1-1.094-1.893c-.606-1.241-.905-2.422-.893-3.22a3.38 3.38 0 0 1 .038-.55c.034-.155.06-.31.121-.446.106-.273.276-.534.571-.776.579-.496 1.681-.81 2.884-.689 1.207.114 2.487.629 3.615 1.476 1.135.848 2.111 2.044 2.868 3.444l.038.076a2.848 2.848 0 0 0 3.471 1.329 2.843 2.843 0 0 0 1.714-3.641c-.768-2.135-1.96-4.235-3.675-6.003-1.71-1.76-3.924-3.18-6.502-3.872a12.604 12.604 0 0 0-4.076-.416 11.248 11.248 0 0 0-4.284 1.128 10.405 10.405 0 0 0-3.702 3.054c-.499.655-.901 1.37-1.237 2.104-.318.73-.568 1.488-.731 2.237-.337 1.503-.356 2.96-.238 4.315.125 1.362.405 2.63.764 3.822.36 1.196.803 2.317 1.298 3.373a31.9 31.9 0 0 0 1.605 3.043c.458.768.935 1.506 1.427 2.233h-.004a39.13 39.13 0 0 0-4.515 2.384c-3.111-.344-6.2-.76-9.242-1.294-2.033-.364-4.043-.769-6.007-1.26-1.96-.485-3.876-1.045-5.662-1.726a24.74 24.74 0 0 1-2.528-1.102c-.772-.393-1.48-.829-1.987-1.234a4.916 4.916 0 0 1-.56-.507c-.02-.015-.03-.03-.046-.045.288-.28.761-.621 1.314-.905.719-.382 1.566-.711 2.456-.984 1.79-.556 3.762-.9 5.76-1.098l.046-.007a2.843 2.843 0 0 0 2.547-2.805 2.846 2.846 0 0 0-2.824-2.868c-2.301-.02-4.628.11-7.028.567-1.2.231-2.418.538-3.671 1.022-.628.246-1.26.526-1.911.901a10.12 10.12 0 0 0-1.96 1.446c-.648.62-1.307 1.438-1.757 2.524-.114.261-.197.56-.284.844a7.996 7.996 0 0 0-.166.909c-.061.609-.05 1.237.049 1.809.189 1.162.632 2.12 1.109 2.891a11.265 11.265 0 0 0 1.529 1.942c1.056 1.082 2.127 1.88 3.194 2.6a33.287 33.287 0 0 0 3.21 1.855c2.142 1.093 4.284 1.979 6.434 2.774a98.121 98.121 0 0 0 6.464 2.112c.511.147 1.018.291 1.529.435a36.8 36.8 0 0 0-4.458 7.089v.004c-1.908-2.014-3.876-3.997-6.022-5.931a52.386 52.386 0 0 0-3.471-2.888 31.347 31.347 0 0 0-2.028-1.408 17.575 17.575 0 0 0-2.574-1.378 11.177 11.177 0 0 0-1.888-.616c-.761-.16-1.73-.31-3.02-.107a6.543 6.543 0 0 0-1.007.254 6.508 6.508 0 0 0-2.79 1.84 6.7 6.7 0 0 0-.594.783c-.083.129-.174.269-.238.39a7.248 7.248 0 0 0-.681 1.692 9.383 9.383 0 0 0-.3 2.02c-.022.584 0 1.09.038 1.568.084.953.231 1.786.401 2.577l.39 1.764c.027.14.065.268.087.408l.057.428.121.855.065.428.033.443.072.886c.061.586.061 1.196.076 1.801.05 2.426-.11 4.92-.435 7.407a50.6 50.6 0 0 1-1.503 7.35c-.17.594-.367 1.17-.548 1.76a55.283 55.283 0 0 1-.632 1.684l-.352.791c-.061.129-.114.276-.178.39l-.193.356-.186.355c-.064.121-.129.246-.193.326-.129.185-.257.375-.378.575l-.303.485a2.813 2.813 0 0 0 4.462 3.387c.295-.322.59-.655.878-.988.155-.17.265-.333.382-.496l.349-.488.344-.492c.117-.166.2-.325.303-.492l.583-.98a53.92 53.92 0 0 0 1.018-1.964c.295-.659.61-1.321.89-1.984a58.231 58.231 0 0 0 2.69-8.114 58.405 58.405 0 0 0 1.51-8.493c.068-.73.152-1.454.167-2.203l.045-1.12.02-.56-.012-.568-.004-.205c.167.186.333.371.496.557 1.608 1.84 3.179 3.838 4.708 5.889a181.94 181.94 0 0 1 4.481 6.328c.14.2.311.428.477.617.284.33.594.62.924.874 0 .216.003.424.015.636-2.661 2.861-5.265 5.821-7.748 9.034-1.567 2.06-3.096 4.19-4.485 6.715-.685 1.267-1.347 2.645-1.854 4.363-.246.879-.454 1.851-.496 3.02l-.007.44.022.473c.012.159.02.314.038.477.023.166.05.337.076.503.113.666.333 1.385.65 2.07.16.337.356.67.557.992.212.299.44.613.681.878a8.075 8.075 0 0 0 1.54 1.328c1.05.697 2.04 1.06 2.938 1.31 1.79.466 3.292.519 4.723.507 2.842-.053 5.367-.48 7.853-.98 4.943-1.022 9.618-2.434 14.243-3.948a2.845 2.845 0 0 0 1.911-3.236 2.842 2.842 0 0 0-3.323-2.267h-.015c-4.648.878-9.322 1.635-13.864 1.965-2.252.155-4.511.208-6.46-.027a10.954 10.954 0 0 1-1.685-.322c.004-.015.012-.026.015-.037.133-.273.322-.606.534-.954.235-.36.477-.73.768-1.117 1.14-1.548 2.619-3.164 4.183-4.723a83.551 83.551 0 0 1 2.585-2.468 35.897 35.897 0 0 0 2.312 4.16c.125.2.261.405.397.602 3.747-.413 7.415-1.06 10.356-1.617l.037-.007a7.47 7.47 0 0 1 8.702 5.957 7.491 7.491 0 0 1-4.724 8.38C132.172 94.372 138.542 96 145.313 96c20.358 0 37.087-14.708 38.994-33.514.193-.05.386-.098.576-.144a23.261 23.261 0 0 1 2.354-.458c.726-.102 1.393-.14 1.847-.125.125-.004.193.015.299.012.03.003.064.007.098.007h.053c.008.004.015.004.027.004.106 0 .094-.019.09-.068-.007-.05-.022-.125.019-.117.038.007.125.083.216.26.087.19.186.443.269.761.079.33.159.69.219 1.102.129.806.216 1.745.307 2.725.091.984.178 2.02.306 3.1.262 2.138.682 4.435 1.533 6.683.837 2.245 2.154 4.406 3.812 6.15.825.871 1.725 1.655 2.66 2.336.943.677 1.919 1.26 2.911 1.782a2.848 2.848 0 0 0 3.641-.874 2.848 2.848 0 0 0-.674-3.966" fill="#0398F3"></path><g clip-path="url(#beholder-eye-socket-clip-path)"><circle cx="137.5" cy="60" r="7" fill="#1B9AF0"><animateMotion dur="2.3s" repeatCount="indefinite"><mpath xlink:href="#beholder-eye-move-path"></mpath></animateMotion></circle></g></g><g class="beholder-dm-screen__screen"><path fill="#EAEEF0" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" d="M76 76h136v97H76z"></path><path d="M218 170.926V74.282l64-35.208v96.644l-64 35.208zM70 171.026V74.318L3 38.974v96.708l67 35.344z" fill="#F3F6F9" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
+				<svg class="beholder-dm-screen loading-status-indicator__svg animate" viewBox="0 0 285 176" fill="none" xmlns="http://www.w3.org/2000/svg" style="overflow:visible;margin-top:100px;width:100%;position:relative;padding:0 10%;"><defs><path id="beholder-eye-move-path" d="M0 0 a 15 5 0 0 0 15 0 a 15 5 0 0 1 -15 0 z"></path><clipPath id="beholder-eye-socket-clip-path"><path id="eye-socket" fill-rule="evenodd" clip-rule="evenodd" d="M145.5 76c-8.562 0-15.5-7.027-15.5-15.694 0-8.663 6.938-1.575 15.5-1.575 8.562 0 15.5-7.088 15.5 1.575C161 68.973 154.062 76 145.5 76z"></path></clipPath></defs><g class="beholder-dm-screen__beholder"><path fill-rule="evenodd" clip-rule="evenodd" d="M145.313 77.36c-10.2 0-18.466-8.27-18.466-18.47 0-10.197 8.266-1.855 18.466-1.855 10.199 0 18.465-8.342 18.465 1.855 0 10.2-8.266 18.47-18.465 18.47m59.557 4.296l-.083-.057c-.704-.5-1.367-1.03-1.965-1.59a12.643 12.643 0 0 1-1.57-1.801c-.909-1.268-1.51-2.653-1.859-4.175-.355-1.521-.461-3.179-.442-4.977.007-.897.049-1.835.087-2.827.038-.995.079-2.032.053-3.194-.031-1.158-.11-2.445-.519-3.97a10.494 10.494 0 0 0-1.014-2.43 8.978 8.978 0 0 0-1.938-2.32 9.64 9.64 0 0 0-2.468-1.54l-.314-.137-.299-.114-.609-.212c-.382-.105-.787-.227-1.151-.298-1.495-.315-2.819-.383-4.065-.39-1.248-.004-2.407.087-3.534.2a56.971 56.971 0 0 0-3.18.44c-6.271.646-12.648 1.559-13.689-.837-1.079-2.487-3.35-8.058 3.115-12.19 4.076.154 8.141.347 12.179.62 1.461.098 2.914.212 4.36.34-4.614.924-9.314 1.7-14.019 2.43h-.015a2.845 2.845 0 0 0-2.388 3.066 2.84 2.84 0 0 0 3.088 2.574c5.125-.462 10.25-.973 15.416-1.696 2.592-.378 5.17-.776 7.88-1.42a29.7 29.7 0 0 0 2.108-.59c.181-.06.363-.117.56-.193.197-.072.378-.136.594-.227.208-.09.405-.17.643-.291l.345-.174.394-.235c.064-.042.124-.076.196-.125l.235-.174.235-.174.117-.099.148-.136c.098-.094.189-.189.283-.287l.137-.152a3.44 3.44 0 0 0 .166-.22c.114-.154.224-.317.318-.484l.072-.125.038-.064.042-.09a5.06 5.06 0 0 0 .367-1.154c.045-.308.06-.63.045-.944a4.322 4.322 0 0 0-.042-.458 5.19 5.19 0 0 0-.386-1.207 5.356 5.356 0 0 0-.499-.799l-.091-.117-.072-.083a5.828 5.828 0 0 0-.303-.318l-.155-.151-.083-.076-.057-.05a9.998 9.998 0 0 0-.503-.382c-.152-.102-.28-.178-.424-.265l-.205-.124-.181-.091-.36-.186a18.713 18.713 0 0 0-.643-.28l-.591-.23c-1.521-.538-2.853-.856-4.197-1.159a83.606 83.606 0 0 0-3.951-.772c-2.604-.45-5.185-.829-7.763-1.166-4.273-.564-8.531-1.029-12.785-1.46 0-.004-.004-.004-.004-.004a38.55 38.55 0 0 0-4.81-3.1v-.004c.397-.223.965-.424 1.688-.549 1.135-.208 2.551-.242 4.05-.185 3.024.11 6.366.59 10.022.662 1.832.02 3.781-.056 5.84-.56a12.415 12.415 0 0 0 3.081-1.188 10.429 10.429 0 0 0 2.702-2.135 2.841 2.841 0 0 0-3.774-4.205l-.208.152c-.825.594-1.76.87-2.956.942-1.188.068-2.566-.09-4.004-.367-2.907-.553-6.003-1.556-9.5-2.32-1.763-.371-3.644-.7-5.802-.73a16.984 16.984 0 0 0-3.455.298 13.236 13.236 0 0 0-3.774 1.333 13.065 13.065 0 0 0-3.376 2.615 14.67 14.67 0 0 0-1.646 2.154h-.004a41.49 41.49 0 0 0-8.436-.863c-1.518 0-3.017.079-4.489.238-1.79-1.563-3.444-3.198-4.833-4.913a21.527 21.527 0 0 1-1.4-1.903 15.588 15.588 0 0 1-1.094-1.893c-.606-1.241-.905-2.422-.893-3.22a3.38 3.38 0 0 1 .038-.55c.034-.155.06-.31.121-.446.106-.273.276-.534.571-.776.579-.496 1.681-.81 2.884-.689 1.207.114 2.487.629 3.615 1.476 1.135.848 2.111 2.044 2.868 3.444l.038.076a2.848 2.848 0 0 0 3.471 1.329 2.843 2.843 0 0 0 1.714-3.641c-.768-2.135-1.96-4.235-3.675-6.003-1.71-1.76-3.924-3.18-6.502-3.872a12.604 12.604 0 0 0-4.076-.416 11.248 11.248 0 0 0-4.284 1.128 10.405 10.405 0 0 0-3.702 3.054c-.499.655-.901 1.37-1.237 2.104-.318.73-.568 1.488-.731 2.237-.337 1.503-.356 2.96-.238 4.315.125 1.362.405 2.63.764 3.822.36 1.196.803 2.317 1.298 3.373a31.9 31.9 0 0 0 1.605 3.043c.458.768.935 1.506 1.427 2.233h-.004a39.13 39.13 0 0 0-4.515 2.384c-3.111-.344-6.2-.76-9.242-1.294-2.033-.364-4.043-.769-6.007-1.26-1.96-.485-3.876-1.045-5.662-1.726a24.74 24.74 0 0 1-2.528-1.102c-.772-.393-1.48-.829-1.987-1.234a4.916 4.916 0 0 1-.56-.507c-.02-.015-.03-.03-.046-.045.288-.28.761-.621 1.314-.905.719-.382 1.566-.711 2.456-.984 1.79-.556 3.762-.9 5.76-1.098l.046-.007a2.843 2.843 0 0 0 2.547-2.805 2.846 2.846 0 0 0-2.824-2.868c-2.301-.02-4.628.11-7.028.567-1.2.231-2.418.538-3.671 1.022-.628.246-1.26.526-1.911.901a10.12 10.12 0 0 0-1.96 1.446c-.648.62-1.307 1.438-1.757 2.524-.114.261-.197.56-.284.844a7.996 7.996 0 0 0-.166.909c-.061.609-.05 1.237.049 1.809.189 1.162.632 2.12 1.109 2.891a11.265 11.265 0 0 0 1.529 1.942c1.056 1.082 2.127 1.88 3.194 2.6a33.287 33.287 0 0 0 3.21 1.855c2.142 1.093 4.284 1.979 6.434 2.774a98.121 98.121 0 0 0 6.464 2.112c.511.147 1.018.291 1.529.435a36.8 36.8 0 0 0-4.458 7.089v.004c-1.908-2.014-3.876-3.997-6.022-5.931a52.386 52.386 0 0 0-3.471-2.888 31.347 31.347 0 0 0-2.028-1.408 17.575 17.575 0 0 0-2.574-1.378 11.177 11.177 0 0 0-1.888-.616c-.761-.16-1.73-.31-3.02-.107a6.543 6.543 0 0 0-1.007.254 6.508 6.508 0 0 0-2.79 1.84 6.7 6.7 0 0 0-.594.783c-.083.129-.174.269-.238.39a7.248 7.248 0 0 0-.681 1.692 9.383 9.383 0 0 0-.3 2.02c-.022.584 0 1.09.038 1.568.084.953.231 1.786.401 2.577l.39 1.764c.027.14.065.268.087.408l.057.428.121.855.065.428.033.443.072.886c.061.586.061 1.196.076 1.801.05 2.426-.11 4.92-.435 7.407a50.6 50.6 0 0 1-1.503 7.35c-.17.594-.367 1.17-.548 1.76a55.283 55.283 0 0 1-.632 1.684l-.352.791c-.061.129-.114.276-.178.39l-.193.356-.186.355c-.064.121-.129.246-.193.326-.129.185-.257.375-.378.575l-.303.485a2.813 2.813 0 0 0 4.462 3.387c.295-.322.59-.655.878-.988.155-.17.265-.333.382-.496l.349-.488.344-.492c.117-.166.2-.325.303-.492l.583-.98a53.92 53.92 0 0 0 1.018-1.964c.295-.659.61-1.321.89-1.984a58.231 58.231 0 0 0 2.69-8.114 58.405 58.405 0 0 0 1.51-8.493c.068-.73.152-1.454.167-2.203l.045-1.12.02-.56-.012-.568-.004-.205c.167.186.333.371.496.557 1.608 1.84 3.179 3.838 4.708 5.889a181.94 181.94 0 0 1 4.481 6.328c.14.2.311.428.477.617.284.33.594.62.924.874 0 .216.003.424.015.636-2.661 2.861-5.265 5.821-7.748 9.034-1.567 2.06-3.096 4.19-4.485 6.715-.685 1.267-1.347 2.645-1.854 4.363-.246.879-.454 1.851-.496 3.02l-.007.44.022.473c.012.159.02.314.038.477.023.166.05.337.076.503.113.666.333 1.385.65 2.07.16.337.356.67.557.992.212.299.44.613.681.878a8.075 8.075 0 0 0 1.54 1.328c1.05.697 2.04 1.06 2.938 1.31 1.79.466 3.292.519 4.723.507 2.842-.053 5.367-.48 7.853-.98 4.943-1.022 9.618-2.434 14.243-3.948a2.845 2.845 0 0 0 1.911-3.236 2.842 2.842 0 0 0-3.323-2.267h-.015c-4.648.878-9.322 1.635-13.864 1.965-2.252.155-4.511.208-6.46-.027a10.954 10.954 0 0 1-1.685-.322c.004-.015.012-.026.015-.037.133-.273.322-.606.534-.954.235-.36.477-.73.768-1.117 1.14-1.548 2.619-3.164 4.183-4.723a83.551 83.551 0 0 1 2.585-2.468 35.897 35.897 0 0 0 2.312 4.16c.125.2.261.405.397.602 3.747-.413 7.415-1.06 10.356-1.617l.037-.007a7.47 7.47 0 0 1 8.702 5.957 7.491 7.491 0 0 1-4.724 8.38C132.172 94.372 138.542 96 145.313 96c20.358 0 37.087-14.708 38.994-33.514.193-.05.386-.098.576-.144a23.261 23.261 0 0 1 2.354-.458c.726-.102 1.393-.14 1.847-.125.125-.004.193.015.299.012.03.003.064.007.098.007h.053c.008.004.015.004.027.004.106 0 .094-.019.09-.068-.007-.05-.022-.125.019-.117.038.007.125.083.216.26.087.19.186.443.269.761.079.33.159.69.219 1.102.129.806.216 1.745.307 2.725.091.984.178 2.02.306 3.1.262 2.138.682 4.435 1.533 6.683.837 2.245 2.154 4.406 3.812 6.15.825.871 1.725 1.655 2.66 2.336.943.677 1.919 1.26 2.911 1.782a2.848 2.848 0 0 0 3.641-.874 2.848 2.848 0 0 0-.674-3.966" fill="#0398F3"></path><g clip-path="url(#beholder-eye-socket-clip-path)"><circle cx="137.5" cy="60" r="7" fill="#1B9AF0"><animateMotion dur="2.3s" repeatCount="indefinite"><mpath xlink:href="#beholder-eye-move-path"></mpath></animateMotion></circle></g></g><g class="beholder-dm-screen__screen"><path fill="#EAEEF0" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" d="M76 76h136v97H76z"></path><path d="M218 170.926V74.282l64-35.208v96.644l-64 35.208zM70 171.026V74.318L3 38.974v96.708l67 35.344z" fill="#F3F6F9" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"></path></g></svg>
 				<div class="loading-status-indicator__subtext">${loadingText}</div>
 			</div>
 		</div>
@@ -3319,229 +3204,7 @@ function init_loading_overlay_beholder() {
 		"right": "0px"
 	});
 	$("#loading_overlay").append(loadingIndicator);
-	// For safety reasons.. if something don't work.. it's better to just remove this overlay to make it easier to fix stuff
-	setTimeout(remove_loading_overlay, 15000);
-
 }
-
-/**
- * The first time the window loads, start doing all the things
- */
-$(function() {
-
-	// we injected an overlay in `Load.js` this makes it look nice by setting a background image, etc.
-	let loadingBg = $(`<div></div>`);
-	loadingBg.css({
-		"background-position": "center",
-		"background-size": "cover",
-		"filter": "blur(4px)",
-		"width": "100%",
-		"height": "100%",
-		"background-color": "#26282a",
-		"opacity": "0.5",
-	});
-	$("#loading_overlay").append(loadingBg);
-	if (is_encounters_page()) {
-		// DMG cover art
-		loadingBg.css({
-			"background-image": "url(https://media-waterdeep.cursecdn.com/attachments/0/267/dmg1k.jpg)"
-		});
-	} else if (is_characters_page()) {
-		// PHB cover art
-		loadingBg.css({
-			"background-image": "url(https://media-waterdeep.cursecdn.com/attachments/0/264/phb1k.jpg)"
-		});
-	}
-
-	window.EXTENSION_PATH = $("#extensionpath").attr('data-path');
-	var is_dm = false;
-	if($(".ddb-campaigns-detail-body-dm-notes-private").length > 0) {
-		is_dm = true;
-	} else if (is_encounters_page()) {
-		is_dm = true;
-	}
-
-	// SCB: Add a dummy DIV to force the AboutVTT DIV below the standard DDB buttons
-	$(".ddb-campaigns-detail-header-secondary-sharing").append($("<div style='clear:both'>"))
-
-	// SCB:Create a 'content DIV' for AboveVTT to add our controls to, so we can control styling better
-	var contentDiv = $("<div class='above-vtt-content-div'>").appendTo($(".ddb-campaigns-detail-header-secondary-sharing"));
-
-	var warningDiv = $("<div class='above-vtt-warning-div' style='padding-top: 20px;'>").appendTo($(".ddb-campaigns-invite-container"));
-	var warningtitleDiv = $("<div class='above-vtt-warning-secondary-div'>").appendTo($(".above-vtt-warning-div"));
-
-	// SCB: Append our logo
-	contentDiv.append($("<img class='above-vtt-logo above-vtt-right-margin-5px' width='120px' src='" + window.EXTENSION_PATH + "assets/logo.png'>"));
-
-	if(is_dm) {
-		contentDiv.append($("<a class='above-vtt-campaignscreen-blue-button above-vtt-right-margin-5px button joindm btn modal-link ddb-campaigns-detail-body-listing-campaign-link' style='position:relative'>JOIN AS DM</a>"));
-		warningDiv.append($("<a class='ddb-campaigns-warning-div' style='color: #333; padding-left: 15%'>If you press 'RESET INVITE LINK' you will lose your cloud data!</a>"));
-		warningtitleDiv.append($("<a class='above-vtt-warning-secondary-div' style='color: #c53131; font-weight: 900; font-size: 16px; font-family: roboto; background-color: #fff; border: 2px solid #c53131; border-radius: 4px; padding: 10px 145px 30px 145px;'>WARNING FOR ABOVEVTT!!!</a>"));
-	}
-
-	$(".ddb-campaigns-character-card-footer-links").each(function() {
-		if($(this).find(".ddb-campaigns-character-card-footer-links-item-edit").length == 0)
-			return;
-
-		let sheet = $(this).find(".ddb-campaigns-character-card-footer-links-item-view").attr('href');
-		let img = $(this).parent().parent().find('.user-selected-avatar').css('background-image');
-		let name = $(this).parent().parent().find(".ddb-campaigns-character-card-header-upper-character-info-primary").html();
-		if (img)
-			img = img.replace(/url\("(.*)"\)/, "$1");
-		else
-			img = "https://www.dndbeyond.com/content/1-0-1436-0/skins/waterdeep/images/characters/default-avatar.png";
-
-		newlink = $("<a style='color:white;background: #1b9af0;' href='#' class='button ddb-campaigns-character-card-footer-links-item'>JOIN AboveVTT</a>");
-
-		newlink.click(function(e) {
-			e.preventDefault();
-			gather_pcs();
-			let cs=$(".ddb-campaigns-invite-primary").text().split("/").pop();
-			window.open(`https://www.dndbeyond.com${sheet}?cs=${cs}&cid=${get_campaign_id()}&abovevtt=true`, '_blank');
-		});
-
-		$(this).prepend(newlink);
-
-		console.log('Sheet: ' + sheet + "img " + img);
-	});
-
-	delete_button = $("<a class='above-vtt-campaignscreen-black-button button btn modal-link ddb-campaigns-detail-body-listing-campaign-link' id='above-delete'>Delete AboveVTT Data for this campaign</a>");
-	delete_button.click(function() {
-		if (confirm("Are you sure?")) {
-			let gameId = find_game_id();
-			localStorage.removeItem("ScenesHandler" + gameId);
-			localStorage.removeItem("current_source" + gameId);
-			localStorage.removeItem("current_chapter" + gameId);
-			localStorage.removeItem("current_scene" + gameId);
-			localStorage.removeItem("CombatTracker"+gameId);
-			localStorage.removeItem("Journal"+gameId);
-			localStorage.removeItem("JournalChapters"+gameId);
-		}
-		else {
-			console.log('user canceled');
-		}
-	});
-
-	delete_button2 = $("<a class='above-vtt-campaignscreen-black-button button btn modal-link ddb-campaigns-detail-body-listing-campaign-link' id='above-delete2'>Delete Global AboveVTT Data (soundpads, tokens..)</a>");
-	delete_button2.click(function() {
-		if (confirm("Are you sure?")) {
-			localStorage.removeItem("Soundpads");
-			localStorage.removeItem("CustomTokens");
-		}
-		else {
-			console.log('user canceled');
-		}
-	});
-
-
-
-
-	var campaign_banner=$("<div id='campaign_banner'></div>")
-	campaign_banner.append("<h4><img class='above-vtt-right-margin-5px' alt='' width='100px' src='"+window.EXTENSION_PATH + "assets/logo.png'>Basic Instructions!</h4>");
-	campaign_banner.append("<br>If you are the DM, press <b>JOIN AS DM</b> above.<br><br>");
-	campaign_banner.append("Players, press <b>JOIN AboveVTT</b> next to your character at the bottom, and then wait for your DM to join.<br><br>");
-	campaign_banner.append("Please check that you do not have any other extensions for DndBeyond (like Beyond20) enabled. <b>Disable them</b> or you will not be able to roll dice!<br><br>");
-	campaign_banner.append("If you're looking for tutorials, take a look at our <a target='_blank' href='https://www.youtube.com/channel/UCrVm9Al59iHE19IcqaKqqXA'>YouTube Channel!!</a><br>");
-	campaign_banner.append("If you need help, or just want to send us your feedback, join the <a target='_blank' href='https://discord.gg/cMkYKqGzRh'>AboveVTT Discord Community</a>.<br>");
-	campaign_banner.append("Do you like what you see? Then please support me on <a target='_blank' href='https://www.patreon.com/AboveVTT'>AboveVTT Patreon!</a><br><br>");
-	campaign_banner.append("<b>Deprecation</b> Due to technical changes. You no longer can join as DM if you're not the real DM of the campaign. If you need help recovering your local data for this campaign contact us on discord<br><br>");
-	campaign_banner.append("Use this button to delete all locally held data, to 'clear the cache' as it were: <br>");
-	campaign_banner.append(delete_button);
-	campaign_banner.append(delete_button2);
-	campaign_banner.hide();
-
-	delete_button.css({ "width": "400px" });
-	delete_button2.css({ "width": "400px", "margin-top": "6px", "margin-bottom": "10px" });
-
-	contentDiv.append($("<a class='above-vtt-campaignscreen-white-button above-vtt-right-margin-5px instructions btn modal-link ddb-campaigns-detail-body-listing-campaign-link'>Instructions</a>"));
-
-	window.EXPERIMENTAL_SETTINGS = $.parseJSON(localStorage.getItem('ExperimentalSettings' + find_game_id())) || {};
-	$("head").append('<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons"></link>')
-	$("head").append('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" />')
-
-	$(".instructions").click(function() {
-		if(campaign_banner.is(":visible"))
-			campaign_banner.hide();
-		else
-			campaign_banner.show();
-	});
-
-	$(".ddb-campaigns-detail-header-secondary-description").first().before(campaign_banner);
-
-	$(".joindm").click(function(e) {
-		e.preventDefault();
-		$(".joindm").addClass("button-loading");
-		gather_pcs();
-		window.EncounterHandler = new EncounterHandler(function(didSucceed, errorType) {
-			if (didSucceed === false) {
-				if (errorType === "EncounterLimitException") {
-					alert("Failed to create a backing Encounter! AboveVTT requires 1 available Encounter, but it looks like you already have more than your subscription level allows. Try deleting some encounters (or renaming one of them to \"AboveVTT\") and try again");
-				} else {
-					showDebuggingAlert();
-				}
-				$(".joindm").removeClass("button-loading");
-				return;
-			}
-			if (window.EncounterHandler.avttId !== undefined && window.EncounterHandler.avttId.length > 0) {
-				let cs=$(".ddb-campaigns-invite-primary").text().split("/").pop();
-				window.open(`https://www.dndbeyond.com/encounters/${window.EncounterHandler.avttId}?cs=${cs}&cid=${get_campaign_id()}&abovevtt=true`, '_blank');
-			} else {
-				// DDB doesn't support dice on their encounters page for non-subscribers so load the non-DDB dice version
-				window.DM = true;
-				window.PLAYER_SHEET = false;
-				window.PLAYER_NAME = "THE DM";
-				window.PLAYER_ID = false;
-				window.PLAYER_IMG = 'https://media-waterdeep.cursecdn.com/attachments/thumbnails/0/14/240/160/avatar_2.png';
-				init_above();
-			}
-
-			let oldText = $(".joindm").text();
-			$(".joindm").removeClass("button-loading");
-			$(".joindm").text("Check for blocked pop ups!");
-			setTimeout(function () {
-				$(".joindm").text(oldText);
-			}, 2000);
-		});
-	});
-
-
-	if (window.location.search.includes("abovevtt=true")) {
-		gather_pcs();
-		if (is_encounters_page()) {
-			const urlParams = new URLSearchParams(window.location.search);
-			window.gameId = urlParams.get('cid');
-			window.CAMPAIGN_SECRET = urlParams.get('cs');
-			window.DM = true;
-			window.PLAYER_SHEET = false;
-			window.PLAYER_NAME = "THE DM";
-			window.PLAYER_ID = false;
-			window.PLAYER_IMG = 'https://media-waterdeep.cursecdn.com/attachments/thumbnails/0/14/240/160/avatar_2.png';
-			init_above();
-		} else if (is_characters_page()) {
-			let path = window.location.href;
-			let pathWithoutQuery = path.split("?")[0];
-			let lastComponent = pathWithoutQuery.substring(pathWithoutQuery.lastIndexOf('/') + 1);
-			const urlParams = new URLSearchParams(window.location.search);
-			window.gameId = urlParams.get('cid');
-			window.CAMPAIGN_SECRET = urlParams.get('cs');
-			window.DM = false;
-			window.PLAYER_SHEET = window.location.pathname;
-			window.PLAYER_ID = lastComponent;
-			// these will be updated after the initial load
-			window.PLAYER_NAME = "";
-			window.PLAYER_IMG = "https://www.dndbeyond.com/content/1-0-1436-0/skins/waterdeep/images/characters/default-avatar.png";
-			init_above();
-		} else {
-			window.DM = true;
-			window.PLAYER_SHEET = false;
-			window.PLAYER_NAME = "THE DM";
-			window.PLAYER_ID = false;
-			window.PLAYER_IMG = 'https://media-waterdeep.cursecdn.com/attachments/thumbnails/0/14/240/160/avatar_2.png';
-			init_above();
-		}
-	}
-
-});
 
 /**
  * Initializes the help menu.
@@ -3555,6 +3218,20 @@ function init_help_menu() {
 					<ul>
 						<li class="active"><a href="#tab1"> Keyboard shortcuts</a></li>
 						<li><a href="#tab2">FAQ</a></li>
+						<li><a href="#tab3">Scene Creation</a></li>
+						<li><a href="#tab4">Player UI</a></li>
+						<li><a href="#tab5">Fog, Light and Vision</a></li>
+						<li><a href="#tab6">Sound</a></li>
+						<li><a href="#tab7">Settings</a></li>
+						<li><a href="#tab8">Tokens and Combat</a></li>
+						<li><a href="#tab9">Map Manipulation</a></li>
+						<li><a href="#tab10">Quick Start</a></li>
+						<li><a href="#tab11">In-person tools</a></li>
+						<li><a href="#tab12">Performance Suggestions</a></li>
+						<!-- some unused numbers here for more tabs -->
+						<li><a href="#tab20">Video Tutorial Playlist</a></li>
+						<li><a href="#tab21">Get Help</a></li>		
+						<li><a href="#tab22">Compatible Tools</a></li>
 					</ul>
 				</div>
 
@@ -3564,6 +3241,10 @@ function init_help_menu() {
 						<dl>
 							<dt>SPACE</dt>
 							<dd>Show/hide character sheet (players only)</dd>
+						<dl>
+						<dl>
+							<dt>SHIFT+SPACE</dt>
+							<dd>Center Player Token (players only)</dd>
 						<dl>
 						<dl>
 							<dt>Q</dt>
@@ -3586,8 +3267,16 @@ function init_help_menu() {
 							<dd>Fog menu</dd>
 						<dl>
 						<dl>
+							<dt>W</dt>
+							<dd>Wall tool</dd>
+						<dl>
+						<dl>
 							<dt>D</dt>
 							<dd>Draw tool</dd>
+						<dl>
+						<dl>
+							<dt>T</dt>
+							<dd>Text tool</dd>
 						<dl>
 						<dl>
 							<dt>A</dt>
@@ -3602,11 +3291,11 @@ function init_help_menu() {
 							<dd>Next creature (if combat tracker is open)</dd>
 						<dl>
 						<dl>
-							<dt>-</dt>
+							<dt>- / CTRL+Mouse Wheel Down</dt>
 							<dd>Zoom out</dd>
 						<dl>
 						<dl>
-							<dt>=</dt>
+							<dt>= / CTRL+Mouse Wheel Up</dt>
 							<dd>Zoom in</dd>
 						<dl>
 						<dl>
@@ -3622,17 +3311,88 @@ function init_help_menu() {
 							<dd>Hide buttons from screen (spectator mode)</dd>
 						<dl>
 						<dl>
-							<dt>SHIFT+Click</dt>
+							<dt>SHIFT+L</dt>
+							<dd>Enable/Disable locked token interation (DM only)</dd>
+						<dl>
+						<dl>
+							<dt>SHIFT+V</dt>
+							<dd>Temporary check token vision.</dd>
+						<dl>
+						<dl>
+							<dt>SHIFT+W</dt>
+							<dd>Toggle always show walls. Will also show 'hidden icon' doors/windows.</dd>
+						<dl>
+						<dl>
+							<dt>SHIFT+S</dt>
+							<dd>Toggle snap drawings to grid. This includes drawings from most menus - fog, draw, light, walls etc.</dd>
+						<dl>
+						<dl>
+							<dt>Hold CTRL while drawing</dt>
+							<dd>Temporary toggle snap drawings to grid on/off (opposite of the toggle set). This includes drawings from most menus - fog, draw, light, walls etc.</dd>
+						<dl>
+						<dl>
+							<dt>SHIFT+Click Token</dt>
 							<dd>Select multiple tokens</dd>
+						<dl>
+						<dl>
+							<dt>SHIFT+Click Door/Window</dt>
+							<dd>Quick toggle door/window locked</dd>
+						<dl>
+						<dl>
+							<dt>Hold SHIFT while drawing walls</dt>
+							<dd>Create Segemented Wall. This keeps walls from having pin point holes.</dd>
 						<dl>
 						<dl>
 							<dt>UP/DOWN arrows</dt>
 							<dd>Will cycle through fog & draw options if menu open</dd>
 						<dl>
+						<dl>
+							<dt>SHIFT/CTRL Click on Character Sheet Icon Rolls</dt>
+							<dd>Will roll with ADV/DIS respectively</dd>
+						<dl>
 					</div>
 
-					<div id="tab2">
-						<iframe src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true"></iframe>
+					<div id="tab2" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true">
+						<iframe src=''></iframe>
+					</div>
+					<div id="tab3" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true#h.g7app6ltg7nq"></div>
+					<div id="tab4" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true#h.514yompiqqkv"></div>
+					<div id="tab5" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true#h.5s8va6pc895f"></div>
+					<div id="tab6" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true#h.j0fwkrx8203i"></div>
+					<div id="tab7" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true#kix.bqz5eec7dr2a"></div>
+					<div id="tab8" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true#h.vcs37mnw8lej"></div>
+					<div id="tab9" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true#h.l17lakiwxlm6"></div>
+					<div id="tab10" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true#h.it30rzhxilz3"></div>
+					<div id="tab11" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true#h.6jh5zmtqvn3f"></div>
+					<div id="tab12" class='googledoc bookmark' data-src="https://docs.google.com/document/d/e/2PACX-1vRSJ6Izvldq5c9z_d-9-Maa8ng1SUK2mGSQWkPjtJip0cy9dxAwAug58AmT9zRtJmiUx5Vhkp7hATSt/pub?embedded=true#h.mob2z6z5azn2"></div>
+
+					<div id="tab20">
+						<iframe width="560" height="315" src="https://www.youtube.com/embed/videoseries?list=PLW0tvNe3gIM00xQCReTWi8CPrXBJyDQmG&rel=0" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+					</div>
+					<div id="tab21">
+						AboveVTT is an open source project. The developers build it in their free time, and rely on users to report and troubleshoot bugs. If you're experiencing a bug, here are a few options: 
+						<ul id="help-error-container">
+							<li><a href="https://github.com/cyruzzo/AboveVTT/issues?q=is%3Aissue+label%3Abug" target="_blank" style="text-decoration:underline;color:-webkit-link;">Check Github</a> (Use the search/filter bar at the top of the screen)</li>
+							<li><a href="https://discord.gg/cMkYKqGzRh" target="_blank" style="text-decoration:underline;color:-webkit-link;">Join the Discord</a> The Discord community is very active. Search for your issue, and if you don't find anything, ask in the #support room.</li>
+							<li><a href="https://www.reddit.com/r/AboveVTT/" target="_blank" style="text-decoration:underline;color:-webkit-link;">Check the subreddit</a> The Subreddit is less active, but there's a lot of good info there.</li>
+						</ul>
+						<button id="help-error-container-copy-logs-button">Copy logs to clipboard</button><span class="material-symbols-outlined" style="color:red;font-size: 40px;top: 16px;position: relative;">line_start_arrow_notch</span>Use this button to share logs with developers!
+					</div>
+					<div id="tab22">
+						<div class='help-compatible-tool'>
+							<a href='https://dddice.com' target="_blank">
+								<img class='compatible-tool-icon dddice-icon' src='https://abovevtt-assets.s3.eu-central-1.amazonaws.com/compatible-tools/logo-light-fs8.png'/>
+								<span class='compatible-tool-title'>dddice</span>
+							</a>
+							<span class='compatible-tool-desc'>A multiplayer dice roller that allows you to roll, create, and collect 3D dice with your party or community.</span>
+						</div>
+						<div class='help-compatible-tool'>
+							<a href='https://www.dungeonalchemist.com/' target="_blank">
+								<img class='compatible-tool-icon da-icon' src='https://abovevtt-assets.s3.eu-central-1.amazonaws.com/compatible-tools/DungeonAlchemist-Logo-Softshadow-0907.png'/>
+								<span class='compatible-tool-title'>Dungeon Alchemist</span>
+							</a>
+							<span class='compatible-tool-desc'>An AI-powered map-making application that enables you to make high-quality content fast! Export maps as a UVTT file to import maps, light and walls into AboveVTT.</span>
+						</div>
 					</div>
 
 				</section>
@@ -3642,23 +3402,36 @@ function init_help_menu() {
 
 	$('#help-container').fadeOut(0);
 
-	$(function() {
-        $('.help-tabs a').on('click', function() {
-			$('.help-tabs li').removeClass('active');
-			$(this).parent().addClass('active');
-			let currentTab = $(this).attr('href');
-			$('.tabs-content div').hide();
-			$(currentTab).show();
-			return false;
-        });
-    });
+
+	$('.help-tabs a').on('click', function() {
+		$('.help-tabs li').removeClass('active');
+		$(this).parent().addClass('active');
+		let currentTab = $(this).attr('href');
+		$('.tabs-content>div').hide();
+		if($(currentTab).hasClass('bookmark')){
+			$('.tabs-content>div#tab2').show();
+			let src = $(currentTab).attr('data-src');
+			$('.tabs-content>div#tab2').find('iframe').remove();
+			$('.tabs-content>div#tab2').append(`<iframe src='${src}'></iframe>`)
+		}
+
+		$(currentTab).show();
+		return false;
+	});
 
 	$('#help-menu-outside').on('click', function() {
 		$('#help-container').fadeOut(200);
+		delete window.logSnapshot;
 	});
 
 	$("#help_button").click(function(e) {
+		// if a user is opening the help menu to grab logs, we want to capture logs as close to the event as possible.
+		window.logSnapshot = process_monitored_logs();
 		$('#help-container').fadeIn(200);
+	});
+
+	$("#help-error-container-copy-logs-button").on('click', function() {
+		copy_to_clipboard(window.logSnapshot);
 	});
 }
 
@@ -3699,7 +3472,7 @@ function send_rpg_dice_to_ddb(expression, displayName, imgUrl, rollType="roll", 
 	let diceRoll = new DiceRoll(expression);
 	diceRoll.action = actionType;
 	diceRoll.rollType = rollType;
-	diceRoll.name = displayName;
+	diceRoll.name = displayName == true ? 'THE DM' : displayName;
 	diceRoll.avatarUrl = imgUrl;
 	// diceRoll.entityId = monster.id;
 	// diceRoll.entityType = monsterData.id;
@@ -3721,7 +3494,7 @@ function send_rpg_dice_to_ddb(expression, displayName, imgUrl, rollType="roll", 
 		let roll = new rpgDiceRoller.DiceRoll(expression);
 
 		// rpgDiceRoller doesn't give us the notation of each roll so we're going to do our best to find and match them as we go
-		var choppedExpression = expression;
+		let choppedExpression = expression;
 		let notationList = [];
 		for (let i = 0; i < roll.rolls.length; i++) {
 			let currentRoll = roll.rolls[i];
@@ -3866,7 +3639,7 @@ function send_rpg_dice_to_ddb(expression, displayName, imgUrl, rollType="roll", 
  * @returns Object
  */
 function get_browser() {
-	var ua=navigator.userAgent,tem,M=ua.match(/(opera|chrome|safari|firefox|msie|trident(?=\/))\/?\s*(\d+)/i) || [];
+	let ua=navigator.userAgent,tem,M=ua.match(/(opera|chrome|safari|firefox|msie|trident(?=\/))\/?\s*(\d+)/i) || [];
 	if(/trident/i.test(M[1])){
 			tem=/\brv[ :]+(\d+)/g.exec(ua) || [];
 			return {name:'IE',version:(tem[1]||'')};
@@ -3884,6 +3657,7 @@ function get_browser() {
 		chrome: M[0] == "Chrome",
 		msie: M[0] == "Internet Explorer",
 		opera: M[0] == "Opera",
+		safari: M[0] == "Safari"
 	};
 }
 
@@ -3913,15 +3687,15 @@ function is_player_sheet_open() {
  */
 function show_player_sheet() {
 	$("#character-tools-target").css({
-		"visibility": "visible",
+		"display": "",
 	});
 	$(".ct-character-sheet__inner").css({
-		"visibility": "visible",
-		"z-index": 3
+		"display": "",
+		"z-index": 110
 	});
 	$(".site-bar").css({
-		"visibility": "visible",
-		"z-index": 3
+		"display": "",
+		"z-index": 110
 	});
 	if (window.innerWidth > 1540) { // DDB resize point + sidebar width
 		// the reactive nature of the character sheet starts messing with our thin layout so don't allow the thin layout on smaller screens. Let DDB do their condensed/tablet/mobile view instead
@@ -3933,14 +3707,6 @@ function show_player_sheet() {
 	if (window.innerWidth < 1024) {
 		hide_sidebar();
 	}
-	for(id in window.TOKEN_OBJECTS){
-		if(id.endsWith(window.PLAYER_ID) && window.TOKEN_OBJECTS[id].options.ac != $(".ddbc-armor-class-box__value").html()){
-			window.MB.sendMessage("custom/myVTT/actoplayerdata",{
-				id: window.PLAYER_ID,
-				ac: $(".ddbc-armor-class-box__value").html()
-			});
-		}
-	}
 }
 
 /**
@@ -3949,21 +3715,27 @@ function show_player_sheet() {
  */
 function hide_player_sheet() {
 	$("#character-tools-target").css({
-		"visibility": "hidden",
+		"display": "none",
 	});
 	$(".ct-character-sheet__inner").css({
-		"visibility": "hidden",
+		"display": "none",
 		"z-index": -1
 	});
 	if ($(".site-bar #lock_display").length == 0) {
 		// don't hide it if the DM is watching
 		$(".site-bar").css({
-			"visibility": "hidden",
+			"display": "none",
 			"z-index": -1
 		});
 	}
 	$("#sheet_resize_button").hide();
 	$('#sheet_button').find(".ddbc-tab-options__header-heading").removeClass("ddbc-tab-options__header-heading--is-active");
+	if (window.innerWidth < 1024) {
+		show_sidebar();
+	}
+}
+function minimize_player_sheet(){
+	$('#sheet').dblclick()
 }
 
 /**
@@ -3980,7 +3752,7 @@ function toggle_player_sheet_size() {
 }
 
 /**
- * If the window size changes, or if they open jitsi, or anything like that, we want to update the character sheet css without toggling the size.
+ * If the window size changes, or if they open peerVideo, or anything like that, we want to update the character sheet css without toggling the size.
  * This is explicitly the opposite behavior as toggle_player_sheet_size().
  */
 function reposition_player_sheet() {
@@ -4098,14 +3870,18 @@ function resize_player_sheet_thin() {
 	$(".ct-character-header-desktop__group--long-rest .ct-character-header-desktop__button").css({ "padding": "2px 10px", "margin": "0px" });
 	$(".ct-character-header-desktop__group-tidbits").css({ "width": "60%" });
 
-	$(".ct-character-header-desktop__group--campaign").css({ "position": "relative", "top": "15px", "left": "auto", "right": "-10px", "margin-right": "0px" });
 
-	$(".ct-primary-box").css({ "height": "610px" });
-	$(".ddbc-tab-options__content").css({ "height": "510px" });
-	// these need a little more space due to the filter search bar
-	$(".ct-extras").css({ "height": "540px" });
-	$(".ct-equipment").css({ "height": "540px" });
-	$(".ct-spells").css({ "height": "540px" });
+	$("[class*='styles_campaignSummary']").closest('[class*="styles_container"]').css({ "position": "relative", "top": "15px", "left": "auto", "right": "-10px", "margin-right": "0px" });
+	let height = `${$.position?.scrollbarWidth() ? 512 - $.position.scrollbarWidth() : 512}px`
+	let searchableHeight = `${$.position?.scrollbarWidth() ? 563 - $.position.scrollbarWidth() : 563}px`
+  let containerHeight = `${$.position?.scrollbarWidth() ? 563 - $.position.scrollbarWidth() : 563}px`
+  $('.ct-primary-box').css({
+    '--content-height': height,
+    '--container-height': containerHeight,
+    '--searchable-height': searchableHeight,
+    "height": "610px",
+  });
+
 
 	player_sheet_layout = "thin";
 
@@ -4136,17 +3912,20 @@ function reset_character_sheet_css() {
 	$(".ct-character-header-desktop__group--long-rest .ct-character-header-desktop__button").removeAttr( 'style' );
 	$(".ct-character-header-desktop__group-tidbits").removeAttr( 'style' );
 
-	$(".ct-character-header-desktop__group--campaign").removeAttr( 'style' );
+	$("[class*='styles_campaignSummary']").closest('[class*="styles_container"]').removeAttr( 'style' );
 	$(".ct-primary-box").removeAttr( 'style' );
 	$(".ddbc-tab-options__content").removeAttr( 'style' );
 
 	$(".ct-character-sheet__inner").css({"visibility": "visible", "overflow-x": "hidden"});
 
 	$(".ddbc-character-tidbits__menu-callout").css({"visibility": "hidden", "width": "0px", "height": "0px"});
-
 	let maxHeight = window.innerHeight - 26;
-	if ($("#jitsi_container").length > 0) {
-		maxHeight -= $("#jitsi_container").height();
+	if($.position?.scrollbarWidth()){
+		maxHeight -= $.position.scrollbarWidth();
+	}
+
+	if ($("#peerVideo_container").length > 0) {
+		maxHeight -= $("#peerVideo_container").height();
 	}
 	$(".ct-character-sheet__inner").css({
 		"position": "fixed",
@@ -4177,7 +3956,7 @@ function is_sidebar_visible() {
  * This will show/hide the sidebar regardless of which page we are playing on.
  */
 function toggle_sidebar_visibility() {
-		if (is_sidebar_visible()) {
+		if (is_sidebar_visible() || (!window.DM && window.innerWidth < 1024 && $(`[class*='styles_mobileNav']>div`).length==0)) {
 			hide_sidebar();
 		} else {
 			show_sidebar();
@@ -4188,16 +3967,17 @@ function toggle_sidebar_visibility() {
  * This will show the sidebar regardless of which page we are playing on.
  * It will also adjust the position of the character sheet .
  */
-function show_sidebar() {
+function show_sidebar(dispatchResize = true) {
 
 	let toggleButton = $("#hide_rightpanel");
 	toggleButton.addClass("point-right").removeClass("point-left");
 	toggleButton.attr('data-visible', 1);
 	window.showPanel = true;
-	if (is_characters_page() && window.innerWidth < 1024 && $(".ct-quick-nav__edge-toggle").length > 0) {
-		$(".ct-quick-nav__edge-toggle--not-visible").click();
+	if (is_characters_page() && window.innerWidth < 1024) {
+		if($(`[class*='styles_mobileNav']>div`).length > 0)
+			$(`[class*='styles_mobileNav']>button`).click();
 	} else {
-		let sidebar = is_characters_page() ? $(".ct-sidebar--right") : $(".sidebar--right");
+		let sidebar = is_characters_page() ? $(".ct-sidebar__portal") : $(".sidebar--right");
 		sidebar.css("transform", "translateX(0px)");
 	}
 
@@ -4206,36 +3986,31 @@ function show_sidebar() {
 	} else {
 		$("#sheet").removeClass("sidebar_hidden");
 	}
-
+	$('canvas.dice-rolling-panel__container, .roll-mod-container').css('--sidebar-width', '340px');
+	if(dispatchResize)
+		window.dispatchEvent(new Event('resize'));
 	addGamelogPopoutButton()
 }
 
-var childWindows = {};
+window.childWindows = {};
 
 function addGamelogPopoutButton(){
 	$(`.glc-game-log>[class*='Container-Flex']>[class*='Title'] .popout-button`).remove();
 	const gamelog_popout=$('<div class="popout-button"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 0 24 24" width="18px" fill="#000000"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M18 19H6c-.55 0-1-.45-1-1V6c0-.55.45-1 1-1h5c.55 0 1-.45 1-1s-.45-1-1-1H5c-1.11 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-6c0-.55-.45-1-1-1s-1 .45-1 1v5c0 .55-.45 1-1 1zM14 4c0 .55.45 1 1 1h2.59l-9.13 9.13c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L19 6.41V9c0 .55.45 1 1 1s1-.45 1-1V4c0-.55-.45-1-1-1h-5c-.55 0-1 .45-1 1z"/></svg></div>');
-	let windowTarget = `https://dndbeyond.com/campaigns/${window.get_campaign_id()}?&abovevtt=true&popoutgamelog=true`
+	let windowTarget = `https://dndbeyond.com/campaigns/${window.find_game_id()}?id=${window.PLAYER_ID}&player_name=${window.PLAYER_NAME}&popoutgamelog=true`
 
 	gamelog_popout.off().on("click",function(){
 		popoutWindow("Gamelog", $("<div/>"), 400, 800, windowTarget);
-		let beholderIndicator = build_combat_tracker_loading_indicator("One moment while we load the gamelog");
-		setTimeout(function() {
-			$(childWindows["Gamelog"].document).find("body").append(beholderIndicator);
-		}, 1000)
-		let cleanedUpAlready = false;
-		childWindows["Gamelog"].onload = function() {
-			if(!cleanedUpAlready){
-				popoutGamelogCleanup();
-				cleanedUpAlready = true;
-			}
-		}
-		if(!cleanedUpAlready){
-			setTimeout(function() {
-				popoutGamelogCleanup();  //backup in case onload isn't triggered - I'll look into this more later
-				cleanedUpAlready = true;
-			}, 6000)
-		}
+		// this seems to never go away for me so I just disabled it for now
+		// let beholderIndicator = build_combat_tracker_loading_indicator("One moment while we load the gamelog");
+		// setTimeout(function() {
+		// 	$(childWindows["Gamelog"].document).find("body").append(beholderIndicator);
+		// }, 1000)
+		childWindows["Gamelog"].addEventListener('load', popoutGamelogCleanup)
+		childWindows["Gamelog"].pcs = window.pcs;
+		childWindows["Gamelog"].TOKEN_OBJECTS = window.TOKEN_OBJECTS;
+		childWindows["Gamelog"].ddbConfigJson = window.ddbConfigJson
+		childWindows["Gamelog"].gameId = window.gameId;
 
 	});
 	$(`.glc-game-log>[class*='Container-Flex']>[class*='Title']`).append(gamelog_popout);
@@ -4249,9 +4024,15 @@ width=${width},height=${height},left=100,top=100`;
 	childWindows[name].onbeforeunload = function(){
 		closePopout(name);
 	}
-	setTimeout(function(){
-		childWindows[name].document.title = name
-	}, 1000);
+	function checkTitle() {
+		if(childWindows[name].document && childWindows[name].document?.title != name){    
+	    childWindows[name].document.title = name; 
+	    setTimeout(checkTitle, 1000); 
+	  }
+	}	
+
+	checkTitle();
+
 	$(childWindows[name].document).find('body, head').empty();
 	$(childWindows[name].document).find('body').append(cloneSelector.clone(true,true));
 	$(childWindows[name].document).find('head').append($('link, style').clone());
@@ -4276,17 +4057,29 @@ function popoutGamelogCleanup(){
 		}
 		.mfp-wrap {
 	   		width: 100%;
-	   		z-index: 50000;
+	   		z-index: 100000;
 		}
 		.ddb-campaigns-detail-gamelog {
 			visibility: hidden;
 		}
+		img.magnify{
+			pointer-events:none;
+		}
+		.body-rpgcampaign-details .sidebar {
+		    top: 0 !important;
+		    height: 100% !important;
+		}
+		.body-rpgcampaign select#chat-language {
+	    bottom:0px;
+	    right: 20px;
+		}
 	</style>`);
-	$(childWindows["Gamelog"].document).find(".gamelog-button").click();
+	$(childWindows["Gamelog"].document).find(".gamelog-button, button[class*='gamelog-button']").click();
 	removeFromPopoutWindow("Gamelog", ".dice-roller");
 	removeFromPopoutWindow("Gamelog", ".sidebar-panel-content:not('.glc-game-log')");
 	removeFromPopoutWindow("Gamelog", ".chat-text-wrapper");
 	removeFromPopoutWindow("Gamelog", ".avtt-sidebar-controls");
+	removeFromPopoutWindow("Gamelog", ".sidebar__control");
 	$(childWindows["Gamelog"].document).find("body>div>.sidebar").parent().toggleClass("gamelogcontainer", true);
 	let gamelogMessageBroker = $(childWindows["Gamelog"].document).find(".ddb-campaigns-detail-gamelog").clone(true, true)
 	removeFromPopoutWindow("Gamelog", "body>*:not(.gamelogcontainer):not(.sidebar-panel-loading-indicator)");
@@ -4294,6 +4087,11 @@ function popoutGamelogCleanup(){
 	removeFromPopoutWindow("Gamelog", "iframe");
 	$(childWindows["Gamelog"].document).find("body").append(gamelogMessageBroker);
 	$(childWindows["Gamelog"].document).find(".glc-game-log").append($(".chat-text-wrapper").clone(true, true));
+	$(childWindows["Gamelog"].document).find(".glc-game-log").append($("#chat-language").clone(true, true));
+
+	$(childWindows["Gamelog"].document).find("#chat-language").off('change.value').on('change.value', function(){
+		$("#chat-language").val($(this).val());
+	})
 	setTimeout(function(){removeFromPopoutWindow("Gamelog", "body>.sidebar-panel-loading-indicator")}, 200);
 }
 function updatePopoutWindow(name, cloneSelector){
@@ -4324,15 +4122,17 @@ function closePopout(name){
  * This will hide the sidebar regardless of which page we are playing on.
  * It will also adjust the position of the character sheet .
  */
-function hide_sidebar() {
+function hide_sidebar(triggerResize = true) {
 	let toggleButton = $("#hide_rightpanel");
 	toggleButton.addClass("point-left").removeClass("point-right");
 	toggleButton.attr('data-visible', 0);
 	window.showPanel = false;
-	if (is_characters_page() && window.innerWidth < 1024 && $(".ct-quick-nav__edge-toggle").length > 0) {
-		$(".ct-quick-nav__edge-toggle--visible").click();
+	if (is_characters_page() && window.innerWidth < 1024) {
+		if($(`[class*='styles_mobileNav']>div`).length == 0)
+			$(`[class*='styles_mobileNav']>button`).click();
+		
 	} else {
-		let sidebar = is_characters_page() ? $(".ct-sidebar--right") : $(".sidebar--right");
+		let sidebar = is_characters_page() ? $(".ct-sidebar__portal") : $(".sidebar--right");
 		sidebar.css("transform", "translateX(340px)");
 	}
 
@@ -4341,6 +4141,9 @@ function hide_sidebar() {
 	} else {
 		$("#sheet").addClass("sidebar_hidden");
 	}
+	$('canvas.dice-rolling-panel__container, .roll-mod-container').css('--sidebar-width', '0px');
+	if(triggerResize)
+		window.dispatchEvent(new Event('resize'));
 }
 
 /**
@@ -4388,7 +4191,3 @@ function adjust_site_bar() {
 	}
 }
 
-const debuggingAlertText = "Please check the developer console (F12) for errors, and report this via the AboveVTT Discord.";
-function showDebuggingAlert(message = "An unexpected error occurred!") {
-	alert(`${message}\n${debuggingAlertText}`);
-}

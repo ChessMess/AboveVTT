@@ -6,7 +6,7 @@ class PeerManager {
   enabled = false;
 
   /** @return {Peer} - our private reference to the peerjs object */
-  peer = new Peer();
+  peer = new Peer(`AboveVTT-${window.gameId}-${uuid()}`);
 
   /** @return {PeerConnection[]} List of peers that we are connecting/connected to */
   connections = [];
@@ -77,16 +77,25 @@ class PeerManager {
         window.PeerManager.disconnectFromPeer(conn.peer);
       });
       conn.on("data", (data) => {
-        // console.debug("PeerManager connection data", data);
+        noisy_log("PeerManager connection data", data);
         handle_peer_event(data);
       });
       conn.on("error", (error) => {
         console.error("PeerManager connection error", error);
+        // should we call rebuild_peerManager() here?
       });
     });
     this.peer.on('error', function (error) {
       console.error("PeerManager peer error", error);
+      rebuild_peerManager();
     });
+  }
+
+  tearDown() {
+    this.disconnectAllPeers();
+    this.peer.disconnect();
+    this.peer.destroy();
+    this.connections = [];
   }
 
   /** handles the peerjs connection.open event */
@@ -279,7 +288,7 @@ class PeerManager {
    *  @param {string} playerId - the DDB id of the character
    *  @return {PeerConnection|undefined} the PeerConnection for the player if it exists, else undefined */
   findConnectionByPlayerId(playerId) {
-    // console.debug("PeerManager.findConnectionByPlayerId", playerId);
+    noisy_log("PeerManager.findConnectionByPlayerId", playerId);
     const playerIdString = `${playerId}`; // in case we get a number
     return this.connections.find(pc => pc.playerId === playerIdString);
   }
@@ -288,7 +297,7 @@ class PeerManager {
    *  @param {string} peerId - the id of the peerjs peer
    *  @return {PeerConnection|undefined} the PeerConnection for the peer if it exists, else undefined */
   findConnectionByPeerId(peerId) {
-    // console.debug("PeerManager.findConnectionByPeerId", peerId);
+    noisy_log("PeerManager.findConnectionByPeerId", peerId);
     return this.connections.find(pc => pc.peerId === peerId);
   }
 
@@ -300,22 +309,19 @@ class PeerManager {
     switch (data.message) {
       case PeerEventType.cursor:
         if (this.allowCursorAndRulerStreaming) {
-          // console.debug("PeerManager.send filtering", data.message, this.skipCursorEvents, this.connections.map(pc => pc.playerId));
-          connectionsToSendTo = this.connections.filter(pc => !this.skipCursorEvents.includes(pc.playerId));
-        } else {
-          connectionsToSendTo = [];
-        }
-        break;
-      case PeerEventType.ruler:
-        if (this.allowCursorAndRulerStreaming) {
-          // console.debug("PeerManager.send filtering", data.message, this.skipCursorEvents, this.connections.map(pc => pc.playerId));
-          connectionsToSendTo = this.connections.filter(pc => !this.skipRulerEvents.includes(pc.playerId));
+          if (data.coords.length > 0) {
+            connectionsToSendTo = this.connections.filter(pc => !this.skipRulerEvents.includes(pc.playerId));
+            noisy_log("PeerManager.send filtering ruler event", this.skipRulerEvents, connectionsToSendTo);
+          } else {
+            connectionsToSendTo = this.connections.filter(pc => !this.skipCursorEvents.includes(pc.playerId));
+            noisy_log("PeerManager.send filtering cursor event", this.skipCursorEvents, connectionsToSendTo);
+          }
         } else {
           connectionsToSendTo = [];
         }
         break;
       default:
-        // console.debug("PeerManager.send not filtering", data.message);
+        noisy_log("PeerManager.send not filtering", data.message);
         connectionsToSendTo = this.connections;
       break;
     }
@@ -376,18 +382,19 @@ class PeerManager {
   /** Checks for and cleans up stale connections */
   checkForStaleConnections() {
     try {
-
+      let attemptReconnect = false;
       // first let's clean up everything that we actually know about
       this.connections.forEach(pc => {
         if (pc.isStale) {
           window.PeerManager.disconnectAndRemoveConnection(pc);
+          attemptReconnect = true;
         }
       });
 
       // now let's check deep within peerjs for any that we don't know about
       for (const peerId in this.peer.connections) {
         const connections = this.peer.connections[peerId];
-        // console.log(`PeerManager.checkForStaleConnections this.peer.connections[${peerId}]`, connections)
+        noisy_log(`PeerManager.checkForStaleConnections this.peer.connections[${peerId}]`, connections)
         connections.forEach(conn => {
           if (!conn.open) {
             try {
@@ -402,6 +409,7 @@ class PeerManager {
             } catch (error) {
               console.debug("PeerManager.checkForStaleConnections failed to destroy a closed connection", error);
             }
+            attemptReconnect = true;
           } else if (!this.findConnectionByPeerId(peerId)) {
             // We have an abandoned connection. Close it, and try to reconnect
             try {
@@ -416,11 +424,14 @@ class PeerManager {
             } catch (error) {
               console.debug("PeerManager.checkForStaleConnections failed to destroy an abandoned connection", error);
             }
+            attemptReconnect = true;
           }
         });
       }
 
-      if (this.connections.length === 0) {
+      if (attemptReconnect) {
+        this.readyToConnect();
+      } else if (this.connections.length === 0) {
         clearInterval(this.staleConnectionTimerId); // we're not connected to anything
         this.staleConnectionTimerId = undefined;
       }

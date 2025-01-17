@@ -2,8 +2,8 @@
 function init_sidebar_tabs() {
   console.log("init_sidebar_tabs");
 
-  let sidebarContent = is_characters_page() ? $(".ct-sidebar__pane-content") : $(".sidebar__pane-content");
-  
+  let sidebarContent = is_characters_page() ? $(".ct-sidebar__inner [class*='styles_content']>div:first-of-type") : $(".sidebar__pane-content");
+
   // gamelog doesn't use it yet, maybe never
 
   if (window.DM) {
@@ -12,12 +12,10 @@ function init_sidebar_tabs() {
     sidebarContent.append(tokensPanel.build());
     init_tokens_panel();
 
-    if (window.CLOUD) {
-      $("#scenes-panel").remove();
-      scenesPanel = new SidebarPanel("scenes-panel", false);
-      sidebarContent.append(scenesPanel.build());
-      init_scenes_panel();
-    }
+    $("#scenes-panel").remove();
+    scenesPanel = new SidebarPanel("scenes-panel", false);
+    sidebarContent.append(scenesPanel.build());
+    init_scenes_panel();
 
   } else {
     $("#players-panel").remove();
@@ -30,8 +28,7 @@ function init_sidebar_tabs() {
   $("#sounds-panel").remove();
   soundsPanel = new SidebarPanel("sounds-panel", false);
   sidebarContent.append(soundsPanel.build());
-  init_audio();
-  
+  window.draw_audio_sidepanel();
 
   $("#journal-panel").remove();
   journalPanel = new SidebarPanel("journal-panel", false);
@@ -49,7 +46,6 @@ function init_sidebar_tabs() {
 
   observe_hover_text($(".sidebar__inner"));
   observe_hover_text($(".sidebar-panel-content"));
-  observe_hover_text($(".chat-text-wrapper").parent());
 }
 
 function sidebar_modal_is_open() {
@@ -68,7 +64,7 @@ function display_sidebar_modal(sidebarPanel) {
 }
 
 function observe_hover_text(sidebarPanelContent) {
-  sidebarPanelContent.off("mouseenter mouseleave").on("mouseenter mouseleave", ".sidebar-hover-text", function(hoverEvent) {
+  sidebarPanelContent.off("mouseenter mouseleave").on("mouseenter mouseleave", ".sidebar-hover-text:not(.chat-text-wrapper)", function(hoverEvent) {
     const displayText = $(hoverEvent.currentTarget).attr("data-hover");
     if (typeof displayText === "string" && displayText.length > 0) {
       if (hoverEvent.type === "mouseenter") {
@@ -94,7 +90,7 @@ class SidebarPanel {
   constructor(id, is_modal) {
     this.id = id.startsWith("#") ? id.substring(1) : id;
     if (is_modal == false) {
-      // this.is_modal defaults to true. If anything other than false is passed in (such as undefined), just leave it as the default. 
+      // this.is_modal defaults to true. If anything other than false is passed in (such as undefined), just leave it as the default.
       this.is_modal = is_modal;
     }
   }
@@ -149,7 +145,7 @@ class SidebarPanel {
     this.container.find(".sidebar-panel-loading-indicator").remove(); // just in case there was already one shown we don't want to add a second one
     this.container.append(loadingIndicator);
   }
-  
+
   remove_sidebar_loading_indicator() {
     $(`#${this.id} .sidebar-panel-loading-indicator`).animate({
       "left": "400px"
@@ -157,8 +153,8 @@ class SidebarPanel {
       $(".sidebar-panel-loading-indicator").remove();
     });
   }
-  
-  
+
+
 
   //#endregion Class functions
   //#region UI Construction
@@ -174,7 +170,7 @@ class SidebarPanel {
         <div class="sidebar-panel-body"></div>
         <div class="sidebar-panel-footer">
           <div class="footer-input-wrapper"></div>
-        </div>      
+        </div>
       </div>
     `);
 
@@ -214,13 +210,13 @@ class SidebarPanel {
         titleText,
         `<input title="${titleText}" placeholder="https://..." name="addCustomImage" type="text" />`,
         `<button>Add</button>`,
-        function(imageUrl, input, event) {
+        async function(imageUrl, input, event) {
           if(imageUrl.startsWith("data:")){
             alert("You cannot use urls starting with data:");
           } else {
             let imageUrlSplit = imageUrl.split(', ');
-            for(i = 0; i < imageUrlSplit.length; i++){
-              imageUrlEntered(parse_img(imageUrlSplit[i]));
+            for(let i = 0; i < imageUrlSplit.length; i++){
+              imageUrlEntered(await parse_img(imageUrlSplit[i]));
             }      
           }
         }
@@ -255,6 +251,7 @@ function build_close_button() {
  * @param input {string} the text input to build a wrapper for. eg: `<input type="text" name="someUniqueName" title="this is an input" placeholder="https://..." />`
  * @param sideButton {string|undefined} the button to the right of the label, undefined if you don't want a button. eg: `<button>Add</button>`
  * @param inputSubmitCallback {function|undefined} the function to be called when the user presses enter, or clicks the button. function(inputValue, input, event) { ... }
+ * @param submitOnFocusout {boolean|undefined} whether to call inputSubmitCallback when the input loses focus
  * @returns {*|jQuery|HTMLElement}
  */
 function build_text_input_wrapper(titleText, input, sideButton, inputSubmitCallback, submitOnFocusout = true) {
@@ -407,10 +404,10 @@ function build_toggle_input(settingOption, currentValue, changeHandler) {
     input.addClass("rc-switch-unknown");
     update_hover_text(wrapper, "This has multiple values. Clicking this will enable it for all.");
   } else {
-    if (currentValue === true) {
-      input.addClass("rc-switch-checked");
-    }
     const currentlySetOption = settingOption.options.find(o => o.value === currentValue) || settingOption.options.find(o => o.value === settingOption.defaultValue);
+    if(currentlySetOption.value == true){
+     input.addClass("rc-switch-checked");
+    }
     update_hover_text(wrapper, currentlySetOption?.description);
   }
   wrapper.append(input);
@@ -488,33 +485,39 @@ class SidebarListItem {
    * @param folderPath {string} the folder this item is in
    * @param parentId {string|undefined} a string id of the folder this item is in
    */
-  constructor(id, name, image, type, folderPath = RootFolder.Root.path, parentId = "root") {
+  constructor(id, name, image, type, folderPath = RootFolder.Root.path, parentId = "root", color = undefined) {
     this.id = id;
     this.name = name;
     this.image = image;
     this.type = type;
     this.folderPath = sanitize_folder_path(folderPath);
     this.parentId = parentId;
+    this.color = color;
   }
 
   /**
    * Creates a Folder list item.
+   * @param id {string} a unique identifier for the backing item
    * @param folderPath {string} the path that the folder is in (not including the name of this folder)
    * @param name {string} the name of the folder
    * @param collapsed {boolean} whether or not the folder is open or closed.
    * @param parentId {string|undefined} a string id of the folder this item is in
+   * @param folderType {string} the ItemType that this folder contains
    * @returns {SidebarListItem} the list item this creates
-   * @constructor
    */
-  static Folder(id, folderPath, name, collapsed, parentId) {
-  // static Folder(folderPath, name, collapsed, subtitle = undefined) {
-    console.debug(`SidebarListItem.Folder folderPath: ${folderPath}, name: ${name}, collapsed: ${collapsed}, id: ${id}, parentId: ${parentId}`);
-    let item = new SidebarListItem(id, name, `${window.EXTENSION_PATH}assets/folder.svg`, ItemType.Folder, folderPath, parentId);
+  static Folder(id, folderPath, name, collapsed, parentId, folderType, color = '#F4B459') {
+    console.debug(`SidebarListItem.Folder folderPath: ${folderPath}, name: ${name}, collapsed: ${collapsed}, id: ${id}, parentId: ${parentId}, folderType: ${folderType}`);
+    if(parentId == undefined && folderPath == RootFolder.Scenes.path){
+        parentId = RootFolder.Scenes.id
+    }
+    let item = new SidebarListItem(id, name, `${window.EXTENSION_PATH}assets/folder.svg`, ItemType.Folder, folderPath, parentId, color);
+
     if (collapsed === true || collapsed === false) {
       item.collapsed = collapsed;
     } else {
       item.collapsed = true;
     }
+    item.folderType = folderType
     return item;
   }
 
@@ -574,6 +577,21 @@ class SidebarListItem {
     item.monsterData = monsterData;
     return item;
   }
+    /**
+   * Creates a Monster list item.
+   * @param monsterData {object} the object returned by the DDB API call that searches for monsters
+   * @returns {SidebarListItem} the list item this creates
+   * @constructor
+   */
+  static open5eMonster(monsterData) {
+    console.debug("SidebarListItem.Monster", monsterData);
+    if(monsterData.img_main == null || monsterData.img_main == "http://api.open5e.com/"){
+      monsterData.img_main = 'https://www.dndbeyond.com/avatars/4675/675/636747837794884984.jpeg'
+    }
+    let item = new SidebarListItem(monsterData.slug, monsterData.name, monsterData.img_main, ItemType.Open5e, RootFolder.Open5e.path, RootFolder.Open5e.id);
+    item.monsterData = monsterData;
+    return item;
+  }
 
   /**
    * Creates a PC list item.
@@ -617,11 +635,10 @@ class SidebarListItem {
     if ((typeof sceneData.title == 'string') && sceneData.title.length > 0) {
       name = sceneData.title;
     }
-    let scenePath = sceneData.folderPath || "";
-    let folderPath = sanitize_folder_path(`${RootFolder.Scenes.path}/${scenePath}`);
-    let item = new SidebarListItem(sceneData.id, name, sceneData.player_map, ItemType.Scene, folderPath, path_to_html_id(folderPath));
+    let folderPath = folder_path_of_scene(sceneData);
+    let parentId = sceneData.parentId || RootFolder.Scenes.id;
+    let item = new SidebarListItem(sceneData.id, name, sceneData.player_map, ItemType.Scene, folderPath, parentId);
     console.debug(`SidebarListItem.Scene ${item.fullPath()}`);
-    item.sceneId = sceneData.id;
     item.isVideo = sceneData.player_map_is_video == "1"; // explicity using `==` instead of `===` in case it's ever `1` or `"1"`
     return item;
   }
@@ -684,6 +701,12 @@ class SidebarListItem {
   /** @returns {boolean} whether or not this item represents a Folder */
   isTypeFolder() { return this.type === ItemType.Folder }
 
+  /** @returns {boolean} whether or not this item represents a Folder meant for holding Scenes */
+  isTypeSceneFolder() { return this.type === ItemType.Folder && this.folderType === ItemType.Scene }
+
+  /** @returns {boolean} whether or not this item represents a Folder meant for holding Scenes */
+  isTypeMyTokenFolder() { return this.type === ItemType.Folder && this.folderType === ItemType.MyToken }
+
   /** @returns {boolean} whether or not this item represents a "My Token" */
   isTypeMyToken() { return this.type === ItemType.MyToken }
 
@@ -692,6 +715,9 @@ class SidebarListItem {
 
   /** @returns {boolean} whether or not this item represents a Monster */
   isTypeMonster() { return this.type === ItemType.Monster }
+
+  /** @returns {boolean} whether or not this item represents a Monster */
+  isTypeOpen5eMonster() { return this.type === ItemType.Open5e }
 
   /** @returns {boolean} whether or not this item represents a Builtin Token */
   isTypeBuiltinToken() { return this.type === ItemType.BuiltinToken }
@@ -724,10 +750,11 @@ class SidebarListItem {
   canEdit() {
     switch (this.type) {
       case ItemType.Folder:
-        return this.folderPath.startsWith(RootFolder.MyTokens.path) || this.folderPath.startsWith(RootFolder.Scenes.path);
+        return true;
       case ItemType.MyToken:
       case ItemType.PC:
       case ItemType.Monster:
+      case ItemType.Open5e:
       case ItemType.Encounter:
       case ItemType.Scene:
       case ItemType.Aoe:
@@ -742,13 +769,19 @@ class SidebarListItem {
   canDelete() {
     switch (this.type) {
       case ItemType.Folder:
-        // TODO: allow deleting scenes folders
-        return this.folderPath.startsWith(RootFolder.MyTokens.path) || this.folderPath.startsWith(RootFolder.Scenes.path);
+        switch (this.folderType) {
+          case ItemType.MyToken:
+          case ItemType.Scene:
+            return true;
+          default:
+            return false;
+        }
       case ItemType.MyToken:
       case ItemType.Scene:
         return true;
       case ItemType.PC:
       case ItemType.Monster:
+      case ItemType.isTypeOpen5eMonster:
       case ItemType.BuiltinToken:
       case ItemType.Encounter: // we technically could support this, but I don't think we should
       case ItemType.Aoe: // we technically could support this, but I don't think we should
@@ -779,8 +812,8 @@ class SidebarListItem {
   /** @returns {boolean} true if the name partially matches the searchTerm or if the containing folder name partially matches the searchTerm */
   nameOrContainingFolderMatches(searchTerm) {
     if (typeof this.name !== "string") return false;
-    return this.name.toLowerCase().includes(searchTerm.toLowerCase()) // any item with a partially matching name
-    || this.containingFolderName().toLowerCase().includes(searchTerm.toLowerCase()) // all items within a folder with a partially matching name
+    let fullPath = this.fullPath().replace(/^(\/Scenes)/i, '')
+    return fullPath.match(new RegExp(searchTerm, 'i')) != null;
   }
 }
 
@@ -830,14 +863,16 @@ function find_sidebar_list_item(html) {
   if (encounterId !== undefined && encounterId !== null && encounterId !== "") {
     foundItem = window.tokenListItems.find(item => item.isTypeEncounter() && item.encounterId === encounterId);
     if (foundItem !== undefined) {
+      console.log('find_sidebar_list_item', foundItem);
       return foundItem;
     }
   }
 
   let sceneId = html.attr("data-scene-id");
   if (typeof sceneId === "string" && sceneId.length > 0) {
-    foundItem = window.sceneListItems.find(item => item.sceneId == sceneId);
+    foundItem = window.sceneListItems.find(item => item.id === sceneId);
     if (foundItem !== undefined) {
+      console.log('find_sidebar_list_item', foundItem);
       return foundItem;
     }
   }
@@ -846,14 +881,37 @@ function find_sidebar_list_item(html) {
     // explicitly using '==' instead of '===' to allow (33253 == '33253') to return true
     foundItem = window.monsterListItems.find(item => item.monsterData.id == html.attr("data-monster"));
     if (foundItem !== undefined) {
+      console.log('find_sidebar_list_item', foundItem);
       return foundItem;
     }
   }
 
-  let htmlId = html.attr("id");
+  let htmlId = html.attr("data-id") || html.attr("id");
   if (typeof htmlId === "string" && htmlId.length > 0) {
     foundItem = window.tokenListItems.find(li => li.id === htmlId);
     if (foundItem !== undefined) {
+      console.log('find_sidebar_list_item', foundItem);
+      return foundItem;
+    }
+    foundItem = window.sceneListItems.find(li => li.id === htmlId);
+    if (foundItem !== undefined) {
+      console.log('find_sidebar_list_item', foundItem);
+      return foundItem;
+    }
+    foundItem = window.sceneListFolders.find(li => li.id === htmlId);
+    if (foundItem !== undefined) {
+      console.log('find_sidebar_list_item', foundItem);
+      return foundItem;
+    }
+    // explicitly using '==' instead of '===' to allow (33253 == '33253') to return true
+    foundItem = window.monsterListItems.find(item => item.monsterData.id == html.attr("data-monster"));
+    if (foundItem !== undefined) {
+      console.log('find_sidebar_list_item', foundItem);
+      return foundItem;
+    }
+    foundItem = window.open5eListItems.find(item => item.id == htmlId);
+    if (foundItem !== undefined) {
+      console.log('find_sidebar_list_item', foundItem);
       return foundItem;
     }
   }
@@ -874,10 +932,13 @@ function find_sidebar_list_item_from_path(fullPath) {
   let foundItem;
   if (fullPath.startsWith(RootFolder.Scenes.path)) {
     foundItem = window.sceneListItems?.find(matchingPath);
+    console.log('find_sidebar_list_item_from_path sceneListItems', foundItem);
     if (foundItem === undefined) {
       foundItem = window.sceneListFolders?.find(matchingPath);
+      console.log('find_sidebar_list_item_from_path sceneListFolders', foundItem);
     }
     if (foundItem !== undefined) {
+      console.log('find_sidebar_list_item_from_path', foundItem);
       return foundItem;
     }
   }
@@ -896,6 +957,7 @@ function find_sidebar_list_item_from_path(fullPath) {
   if (foundItem === undefined) {
     console.warn(`find_sidebar_list_item found nothing at path: ${fullPath}`);
   }
+  console.log('find_sidebar_list_item_from_path', foundItem);
   return foundItem;
 }
 
@@ -943,6 +1005,25 @@ function harvest_full_path(htmlRow) {
 function set_full_path(html, fullPath) {
   if (html === undefined) return;
   return html.attr("data-full-path", encode_full_path(fullPath)).addClass("list-item-identifier");
+}
+
+/**
+ * sets the id of an item on an html element
+ * @param html {*|jQuery|HTMLElement} the html that corresponds to an item (like a row in the list of tokens)
+ * @param listItem {SidebarListItem} the item to set the id with
+ */
+function set_list_item_identifier(html, listItem) {
+  if (html === undefined || listItem === undefined) return;
+  if (listItem.isTypeScene() || listItem.isTypeSceneFolder()) {
+    html.attr("data-scene-id", listItem.id).addClass("list-item-identifier");
+  } else if (listItem.isTypeEncounter()) {
+    html.attr("data-encounter-id", listItem.id).addClass("list-item-identifier");
+  } else if (listItem.isTypeMonster()) {
+    html.attr("data-monster", listItem.id).addClass("list-item-identifier");
+  }
+  html.attr("data-id", listItem.id).addClass("list-item-identifier");
+  html.attr("data-full-path", encode_full_path(listItem.fullPath())).addClass("list-item-identifier");
+  console.log(`set_list_item_identifier`, html, listItem.fullPath(), listItem.id);
 }
 
 function path_to_html_id(path, name) {
@@ -1007,27 +1088,47 @@ function matches_full_path(html, fullPath) {
  * @returns {*|jQuery|HTMLElement} that represents a row in the list of items in the sidebar
  */
 function build_sidebar_list_row(listItem) {
+  console.log('build_sidebar_list_row', listItem.name);
 
   let row = $(`<div id="${listItem.id}" class="sidebar-list-item-row" title="${listItem.name}"></div>`);
-  set_full_path(row, listItem.fullPath());
-
+  set_list_item_identifier(row, listItem);
+  
+  if (window.hiddenFolderItems.indexOf(listItem.id) > -1) {
+    row.toggleClass('hidden-sidebar-item', true);
+  }
   let rowItem = $(`<div class="sidebar-list-item-row-item"></div>`);
   row.append(rowItem);
   rowItem.on("click", did_click_row);
 
   let imgHolder = $(`<div class="sidebar-list-item-row-img"></div>`);
   rowItem.append(imgHolder);
-  if (listItem.type !== "aoe"){
-    let img = $(`<img src="${parse_img(listItem.image)}" alt="${listItem.name} image" class="token-image" />`);
+  if (listItem.type !== "aoe" && !listItem.isTypeScene()){
+    let tokenCustomizations = find_token_customization(listItem.type, listItem.id);
+    let listingImage = (tokenCustomizations?.tokenOptions?.alternativeImages && tokenCustomizations.tokenOptions?.alternativeImages[0] != undefined) ? tokenCustomizations.tokenOptions?.alternativeImages[0] : listItem.image; 
+    let img;
+    let video = false;
+    if(listingImage?.includes != undefined && listingImage.includes('folder.svg')){
+    img = $(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" id="Layer_1" x="0px" y="0px" viewBox="0 0 309.267 309.267" style="enable-background:new 0 0 309.267 309.267;" xml:space="preserve">
+        <g>
+          <path style="fill:${tokenCustomizations?.color ? `${tokenCustomizations?.color}` : listItem.color ? listItem.color : '#D0994B'};" d="M260.944,43.491H125.64c0,0-18.324-28.994-28.994-28.994H48.323c-10.67,0-19.329,8.65-19.329,19.329   v222.286c0,10.67,8.659,19.329,19.329,19.329h212.621c10.67,0,19.329-8.659,19.329-19.329V62.82   C280.273,52.15,271.614,43.491,260.944,43.491z"/>
+          <path style="fill:#E4E7E7;" d="M28.994,72.484h251.279v77.317H28.994V72.484z"/>
+          <path style="fill:${tokenCustomizations?.color ? tokenCustomizations?.color : listItem.color ? listItem.color : '#F4B459'};" d="M19.329,91.814h270.609c10.67,0,19.329,8.65,19.329,19.329l-19.329,164.298   c0,10.67-8.659,19.329-19.329,19.329H38.658c-10.67,0-19.329-8.659-19.329-19.329L0,111.143C0,100.463,8.659,91.814,19.329,91.814z   "/>
+        </g>
+    </svg>`)
+    }
+    else if(tokenCustomizations?.tokenOptions?.videoToken == true || ['.mp4', '.webm','.mkv'].some(d => listingImage?.includes(d))){
+        img = $(`<video disableRemotePlayback muted src="" loading="lazy" alt="${listItem.name} image" class="token-image video-listing" />`);   
+        video = true;
+    } else{
+        img = $(`<img src="" loading="lazy" alt="${listItem.name} image" class="token-image" />`);
+    }
+  
+    updateImgSrc(listingImage, img, video);
     imgHolder.append(img);
   }
   else{
     // possibly change the background-image-size so it looks nicer as a small image
-    let img = $(
-      `<div data-img="true"; 
-      class="aoe-token-tileable aoe-style-${listItem.style} aoe-shape-${listItem.shape}">
-       </div>
-      `)
+    let img = $(`<div data-img="true" class="aoe-token-tileable aoe-style-${listItem.style} aoe-shape-${listItem.shape}"></div>`);
     imgHolder.append(img);
   }
 
@@ -1037,6 +1138,8 @@ function build_sidebar_list_row(listItem) {
   details.append(title);
   let subtitle = $(`<div class="sidebar-list-item-row-details-subtitle"></div>`);
   details.append(subtitle);
+
+
 
   if (!listItem.isTypeFolder() && !listItem.isTypeScene()) {
     let addButton = $(`
@@ -1058,7 +1161,46 @@ function build_sidebar_list_row(listItem) {
       if (listItem.collapsed === true) {
         row.addClass("collapsed");
       }
-      if (listItem.fullPath().startsWith(RootFolder.MyTokens.path)) {
+      if(listItem.id == "playersFolder"){
+
+
+        let popoutButton = $(`<div class="players-popout-button"><svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 0 24 24" width="18px" fill="#000000"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M18 19H6c-.55 0-1-.45-1-1V6c0-.55.45-1 1-1h5c.55 0 1-.45 1-1s-.45-1-1-1H5c-1.11 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-6c0-.55-.45-1-1-1s-1 .45-1 1v5c0 .55-.45 1-1 1zM14 4c0 .55.45 1 1 1h2.59l-9.13 9.13c-.39.39-.39 1.02 0 1.41.39.39 1.02.39 1.41 0L19 6.41V9c0 .55.45 1 1 1s1-.45 1-1V4c0-.55-.45-1-1-1h-5c-.55 0-1 .45-1 1z"/></svg></div>`);
+        row.append(popoutButton);
+        popoutButton.off('click.popout').on('click.popout', function(){      
+          popoutWindow('Players', row, '350px');
+          let playersWindow = $(childWindows['Players'].document)
+          playersWindow.find('#playersFolder > .sidebar-list-item-row-item, .players-popout-button').remove();
+          playersWindow.find('body').append($(`
+            <style id='playersPopoutCSS'>
+              .folder-item-list > .sidebar-list-item-row {
+                width: 320px;
+                display: inline-block;
+                margin-right:5px;
+                cursor: pointer;
+                flex-shrink: 0;
+              }
+              #playersFolder{
+                border: none;
+              }
+              #playersFolder > .folder-item-list{
+                  display: flex;
+                  width: 100%;
+                  flex-wrap: wrap;
+              }
+              .ability_score,
+              .ability_name{
+                margin-top: 3px;
+              }
+            </style>`))
+
+          playersWindow.find('.ui-draggable').draggable('disable')
+        
+        });
+
+        
+       
+      }
+      if (listItem.folderType === ItemType.MyToken) {
         // add buttons for creating subfolders and tokens
         let addFolder = $(`<button class="token-row-button" title="Create New Folder"><span class="material-icons">create_new_folder</span></button>`);
         rowItem.append(addFolder);
@@ -1068,15 +1210,41 @@ function build_sidebar_list_row(listItem) {
           let clickedItem = find_sidebar_list_item(clickedRow);
           create_folder_inside(clickedItem);
         });
-        let addToken = $(`<button class="token-row-button" title="Create New Token"><span class="material-icons">person_add_alt_1</span></button>`);
-        rowItem.append(addToken);
+        //import dropbox
+        const dropboxOptions = dropBoxOptions(function(links){
+            for(let i = 0; i<links.length; i++){
+              create_token_inside(listItem, links[i].name, links[i].link);
+            }       
+        }, true);
+        const dropboxButton = createCustomDropboxChooser('', dropboxOptions);
+
+        dropboxButton.toggleClass('token-row-button', true);     
+        dropboxButton.attr('title', 'Create token from Dropbox'); 
+
+        const oneDriveButton = createCustomOnedriveChooser('', function(links){
+            for(let i = 0; i<links.length; i++){
+              create_token_inside(listItem, links[i].name, links[i].link, links[i].type);
+            }       
+        }, 'multiple')
+        oneDriveButton.toggleClass('token-row-button one-drive-button', true);
+        oneDriveButton.attr('title', 'Create token from Onedrive'); 
+     
+
+        let addTokenMenu = $(`<div class='addTokenMenu'></div>`)
+
+        
+       
+        let addToken = $(`<button class="token-row-button hover-add-button" title="Create New Token"><span class="material-icons">person_add_alt_1</span></button>`);
+        addTokenMenu.append(addToken, dropboxButton, oneDriveButton);
+        rowItem.append(addTokenMenu);
         addToken.on("click", function (clickEvent) {
+          clickEvent.stopPropagation();
           let clickedRow = $(clickEvent.target).closest(".list-item-identifier");
           let clickedItem = find_sidebar_list_item(clickedRow);
           create_token_inside(clickedItem);
         });
         if (listItem.isRootFolder()) {
-          let reorderButton = $(`<button class="token-row-button reorder-button" title="Reorder Scenes"><span class="material-icons">reorder</span></button>`);
+          let reorderButton = $(`<button class="token-row-button reorder-button" title="Reorder Tokens"><span class="material-icons">reorder</span></button>`);
           rowItem.append(reorderButton);
           reorderButton.on("click", function (clickEvent) {
             clickEvent.stopPropagation();
@@ -1087,7 +1255,7 @@ function build_sidebar_list_row(listItem) {
             }
           });
         }
-      } else if (listItem.fullPath().startsWith(RootFolder.Scenes.path)) {
+      } else if (listItem.folderType === ItemType.Scene) {
         // add buttons for creating subfolders and scenes
         let addFolder = $(`<button class="token-row-button" title="Create New Folder"><span class="material-icons">create_new_folder</span></button>`);
         rowItem.append(addFolder);
@@ -1100,11 +1268,12 @@ function build_sidebar_list_row(listItem) {
         let addScene = $(`<button class="token-row-button" title="Create New Scene"><span class="material-icons">add_photo_alternate</span></button>`);
         rowItem.append(addScene);
         addScene.on("click", function (clickEvent) {
+          clickEvent.stopPropagation();
           let clickedRow = $(clickEvent.target).closest(".list-item-identifier");
           let clickedItem = find_sidebar_list_item(clickedRow);
-          create_scene_inside(clickedItem.fullPath());
+          create_scene_root_container(clickedItem.fullPath(), listItem.id);
         });
-      } else if (listItem.fullPath() === RootFolder.Monsters.path) {
+      } else if (listItem.folderType === ItemType.Monster) {
         // add monster filter button on the root monsters folder
         let filterMonsters = $(`<button class="token-row-button monster-filter-button" title="Filter Monsters"><span class="material-icons">filter_alt</span></button>`);
         if (Object.keys(monster_search_filters).length > 0) {
@@ -1133,55 +1302,50 @@ function build_sidebar_list_row(listItem) {
       row.css("cursor", "default");
       break;
     case ItemType.PC:
-      let playerData = window.PLAYER_STATS[listItem.sheet];
-      if (playerData === undefined) {
+      const pc = find_pc_by_player_id(listItem.sheet, false);
+      if (pc === undefined) {
         subtitle.text("loading character details");
-        playerData = {
-          abilities: [
-            {abilityName: 'Strength', abilityAbbr: 'str', modifier: '?', score: '?', save: '?' },
-            {abilityName: 'Dexterity', abilityAbbr: 'dex', modifier: '?', score: '?', save: '?' },
-            {abilityName: 'Constitution', abilityAbbr: 'con', modifier: '?', score: '?', save: '?' },
-            {abilityName: 'Intelligence', abilityAbbr: 'int', modifier: '?', score: '?', save: '?' },
-            {abilityName: 'Wisdom', abilityAbbr: 'wis', modifier: '?', score: '?', save: '?' },
-            {abilityName: 'Charisma', abilityAbbr: 'cha', modifier: '?', score: '?', save: '?' }
-          ],
-          pp: '?',
-          pinv: '?',
-          pins: '?',
-          inspiration: false,
-          walking: '?',
-          ac: '?',
-          hp: '?',
-          max_hp: '?',
-          temp_hp: '?',
-          fly: '?',
-          climb: '?',
-          swim: '?',
-        };
+        break;
       }
-      row.append(`<div class="subtitle-attibute hp-attribute" title="HP"><span class="subtitle-title">Hit Points</span><span class='hp-containter'><span class="hp-value">${playerData.hp}</span><span> / </span><span class='max-hp-value'>${playerData.max_hp}</span></span></div>`);
+      const color = color_from_pc_object(pc);
+      const hpValue = hp_from_pc_object(pc);
+      const maxHp = max_hp_from_pc_object(pc);
+      const walkingSpeed = speed_from_pc_object(pc);
+      const climbingSpeed = speed_from_pc_object(pc, "Climbing");
+      const flySpeed = speed_from_pc_object(pc, "Flying");
+      const swimSpeed = speed_from_pc_object(pc, "Swimming");
+      row.append(`<div class="subtitle-attibute hp-attribute" title="HP"><span class="subtitle-title">Hit Points</span><span class='hp-containter'><span class="hp-value">${hpValue}</span><span> / </span><span class='max-hp-value'>${maxHp}</span></span></div>`);
       row.append(`<div class="subtitle-attibute exhaustion-attribute" title="HP"><span class="subtitle-title">Exhaustion</span><div class="ddbc-number-bar"><span class='first exhaustion-pip'></span><span class='exhaustion-pip'></span><span class='exhaustion-pip'></span><span class='exhaustion-pip'></span><span class='exhaustion-pip'></span><span class='last exhaustion-pip'></span></div></div>`);
       row.append(`<div style='display: none;' class="hp-attribute death-saves ct-health-summary__data ct-health-summary__deathsaves"><div class="ct-health-summary__deathsaves-content"><div class="ct-health-summary__deathsaves-group ct-health-summary__deathsaves--fail"><span class="ct-health-summary__deathsaves-label ">Failure</span><span class="ct-health-summary__deathsaves-marks"><span class="ct-health-summary__deathsaves-mark ct-health-summary__deathsaves-mark--inactive"></span><span class="ct-health-summary__deathsaves-mark ct-health-summary__deathsaves-mark--inactive"></span><span class="ct-health-summary__deathsaves-mark ct-health-summary__deathsaves-mark--inactive"></span></span></div><div class="ct-health-summary__deathsaves-group ct-health-summary__deathsaves--success"><span class="ct-health-summary__deathsaves-label ">Success</span><span class="ct-health-summary__deathsaves-marks"><span class="ct-health-summary__deathsaves-mark ct-health-summary__deathsaves-mark--inactive"></span><span class="ct-health-summary__deathsaves-mark ct-health-summary__deathsaves-mark--inactive"></span><span class="ct-health-summary__deathsaves-mark ct-health-summary__deathsaves-mark--inactive"></span></span></div></div></div>`);
 
 
       let playerInfo = $(`<div class='player-card-info'></div>`);
-      playerInfo.append(`<div class="subtitle-attibute" title="Passive Perception"><span class="subtitle-title">Passive Perception</span><span class="pp-value">${playerData.pp}</span></div>`);
-      playerInfo.append(`<div class="subtitle-attibute" title="Passive Investigation"><span class="subtitle-title">Passive Investigation</span><span class="pinv-value">${playerData.pinv}</span></div>`);
-      playerInfo.append(`<div class="subtitle-attibute" title="Passive Insight"><span class="subtitle-title">Passive Insight</span><span class="pins-value">${playerData.pins}</span></div>`);
-      playerInfo.append(`<div class="subtitle-attibute" title="Armor Class"><span class="subtitle-title">Armor Class</span><span class="ac-value">${playerData.ac}</span></div>`);
+      playerInfo.append(`<div class="subtitle-attibute" title="Passive Perception"><span class="subtitle-title">Passive Perception</span><span class="pp-value">${pc.passivePerception}</span></div>`);
+      playerInfo.append(`<div class="subtitle-attibute" title="Passive Investigation"><span class="subtitle-title">Passive Investigation</span><span class="pinv-value">${pc.passiveInvestigation}</span></div>`);
+      playerInfo.append(`<div class="subtitle-attibute" title="Passive Insight"><span class="subtitle-title">Passive Insight</span><span class="pins-value">${pc.passiveInsight}</span></div>`);
+      playerInfo.append(`<div class="subtitle-attibute" title="Armor Class"><span class="subtitle-title">Armor Class</span><span class="ac-value">${pc.armorClass}</span></div>`);
       row.append(playerInfo);
 
       row.addClass("player-row");
       let abilities = $(`<div class="player-card-footer">`);
-      abilities.append(playerData.abilities.map(a => `
-               <div class="ability_value" data-ability="${a.abilityAbbr}">
-                    <div class="ddbc-box-background "><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 81 95" class="ddbc-svg ddbc-ability-score-box-svg "><path d="M4.52,13.62A34.66,34.66,0,0,1,3.08,6.26l0-.42.63-.2C5.22,5.18,9.41,3.35,9.41,1V0H71.59V1c0,2.37,4.19,4.2,5.66,4.66l.63.2,0,.42a35.34,35.34,0,0,1-1.44,7.36L76,7.3C74.42,6.71,70.47,5,69.74,2H11.26C10.52,5,6.58,6.71,5,7.3ZM2.32,79.46H2.6c.08-1.12.16-2.38.24-3.76A13,13,0,0,1,.63,69.83,9.4,9.4,0,0,1,3.21,62.6V61.43S1.83,35.67.56,31.56L.4,31l.47-.29a12.31,12.31,0,0,0,2.2-1.87,6.23,6.23,0,0,0,1.55-2.24A5.08,5.08,0,0,0,5,23.27c0-.11-.58-1.35-1.12-3l-.26,2.85c.27.79.5,1.63.71,2.49a5.17,5.17,0,0,1-1.56,2A33.13,33.13,0,0,0,1.74,23.6l-.07-.2L2.91,9.63c0,2,1.38,6.53,1.38,6.53a36.23,36.23,0,0,0,2.1,6.67A7.13,7.13,0,0,1,5,28.71C6.68,38,5.08,71,4.87,74.89A15.6,15.6,0,0,1,3,71.41c.08-2,.13-4.16.16-6.41a7.57,7.57,0,0,0-1.15,4.71,12,12,0,0,0,2.1,5.41l.15.22.45.64.06.07h0a29.64,29.64,0,0,0,5.74,5.66A39.48,39.48,0,0,1,14,83.83h0l.26.18c.79.54,1.55,1.09,2.29,1.65l.18.13h0c1.42,1.09,2.71,2.17,3.78,3.11,1.39,0,2.75.11,4,.22a16.4,16.4,0,0,1-3.19-3.33H17.91l-2.49-2h2.32a16.19,16.19,0,0,1-.88-4.16,4.31,4.31,0,0,1-5.21,1.79c.59.18,3,.53,5.24-4.08v0a8.24,8.24,0,0,1,2.52-5.32,13.54,13.54,0,0,0-1,10.29A1.76,1.76,0,0,0,19.8,83,11.36,11.36,0,0,1,19,78.77c0-8.55,9.66-15.51,21.54-15.51S62,70.22,62,78.77A11.36,11.36,0,0,1,61.2,83a1.76,1.76,0,0,0,1.34-.64,13.54,13.54,0,0,0-1-10.29A8.24,8.24,0,0,1,64.1,77.4v0c2.2,4.61,4.64,4.26,5.24,4.08a4.31,4.31,0,0,1-5.21-1.79,16.19,16.19,0,0,1-.88,4.16h2.32l-2.49,2H59.68a16.4,16.4,0,0,1-3.19,3.33c1.2-.11,2.57-.21,4-.22,1.07-.94,2.36-2,3.78-3.11h0l.18-.13c.74-.56,1.5-1.11,2.29-1.65l.26-.18h0a39.48,39.48,0,0,1,3.49-2.11,29.64,29.64,0,0,0,5.74-5.66h0l.06-.07.45-.64.15-.22A12,12,0,0,0,79,69.71,7.64,7.64,0,0,0,77.8,65c0,2.25.08,4.41.16,6.41a15.6,15.6,0,0,1-1.83,3.48C75.92,71,74.32,38,76,28.71a7.1,7.1,0,0,1-1.34-5.88,38.28,38.28,0,0,0,2.09-6.67s1.4-4.48,1.38-6.53L79.33,23.4l-.07.2a33.13,33.13,0,0,0-1.07,4.08,5.39,5.39,0,0,1-1.57-2c.22-.86.45-1.7.71-2.49l-.25-2.85c-.54,1.61-1.07,2.85-1.12,3a5.08,5.08,0,0,0,.42,3.36,6.23,6.23,0,0,0,1.55,2.24,12.31,12.31,0,0,0,2.2,1.87l.48.29-.17.53c-1.26,4.11-2.64,29.87-2.64,29.87,0,.39,0,.79,0,1.17a9.4,9.4,0,0,1,2.58,7.23,13.37,13.37,0,0,1-2.2,5.89c.07,1.38.15,2.64.23,3.76h.28c1.49-.12,2.79.71,2.16,1.75a2.46,2.46,0,0,1-1.72,1.15,2.58,2.58,0,0,0,.75-.85c.17-.3,0-.44-.14-.51l-.38,0h0a7.86,7.86,0,0,0-.84,0c.18,2.31.32,3.71.33,3.79L79,85.79H66.64c-1.46,1-2.84,2.15-4,3.15a11.85,11.85,0,0,1,7,2.12l-2.75,1.09h0a30,30,0,0,1-5.35,1.74h0l-.33,0L61,94c-9.66,1.67-10.67.75-10.67.75A10.09,10.09,0,0,0,57.11,92l.23-.24c.1-.1.62-.62,1.46-1.4-.62,0-1.22.07-1.81.12h0l-.44,0a8.82,8.82,0,0,0-1.18.23,7.12,7.12,0,0,0-.87.27l-.14,0a6.24,6.24,0,0,0-1,.44l-.11.07a5.63,5.63,0,0,0-.77.54l-.22.19a4.82,4.82,0,0,0-.75.86l-7.89.9.06,0a26.18,26.18,0,0,1-6.46,0l.06,0-7.89-.9a4.5,4.5,0,0,0-.76-.86l-.22-.2a7,7,0,0,0-.79-.55l-.09-.06a8.88,8.88,0,0,0-.95-.44L26.45,91c-.3-.11-.59-.2-.86-.27-.46-.11-.86-.17-1.14-.21l-.44,0h0c-.59,0-1.19-.09-1.81-.12.84.78,1.36,1.3,1.45,1.4l.24.24a10.09,10.09,0,0,0,6.78,2.71s-1,.92-10.67-.75l-.24,0-.33,0h0a29.76,29.76,0,0,1-5.35-1.74h0l-2.75-1.09a11.85,11.85,0,0,1,7-2.12c-1.2-1-2.58-2.1-4-3.15H2l.12-1.08c0-.08.15-1.48.33-3.79a7.86,7.86,0,0,0-.84,0h0l-.38,0c-.17.07-.31.21-.14.51a2.5,2.5,0,0,0,.74.85A2.47,2.47,0,0,1,.16,81.21c-.63-1,.67-1.87,2.16-1.75ZM76.78,49.11c.53-5.66,1.25-14.21,2.15-17.46a15.6,15.6,0,0,1-1.28-1,144.6,144.6,0,0,0-.87,18.5ZM74.63,80a11.89,11.89,0,0,1,1.8-.35c0-.46-.07-1-.1-1.48-.57.67-1.15,1.28-1.7,1.83Zm-5,3.82h7.17c-.06-.66-.15-1.61-.24-2.76a18.56,18.56,0,0,0-6.93,2.76ZM58.69,92.48l.07,0c1.06.59,4.54-.45,7.31-1.59a17.09,17.09,0,0,0-5.08-.6c-1.07,1-1.88,1.72-2.3,2.14ZM40.5,92.14c7,0,13-2.55,16.48-6.35.27-.3.53-.62.78-.94a.61.61,0,0,1,.07-.1,9.16,9.16,0,0,0,.61-.92,9.74,9.74,0,0,0,1.46-5.06c0-7.37-8.7-13.37-19.4-13.37s-19.4,6-19.4,13.37a9.83,9.83,0,0,0,1.45,5.06c.19.32.4.62.62.92l.08.1c.24.32.5.64.77.94,3.43,3.8,9.52,6.35,16.48,6.35ZM20,90.34a17.09,17.09,0,0,0-5.08.6c2.78,1.14,6.25,2.18,7.31,1.59l.07,0c-.42-.42-1.22-1.18-2.3-2.14ZM4.57,79.66a12.14,12.14,0,0,1,1.8.35c-.55-.55-1.13-1.16-1.7-1.83,0,.52-.07,1-.1,1.48Zm-.35,4.17h7.17a18.62,18.62,0,0,0-6.93-2.76c-.09,1.15-.18,2.1-.24,2.76Zm0-34.72a144.6,144.6,0,0,0-.87-18.5,15.6,15.6,0,0,1-1.28,1C3,34.9,3.68,43.45,4.22,49.11Z"></path></svg></div>
-                    <div class="ability_name">${a.abilityAbbr.toUpperCase()}</div>
-                    <div class="ability_modifier">${a.modifier}</div>
-                    <div class="ability_score">${a.score}</div>
-                </div>
-            `).join(''));
+      abilities.append(pc.abilities.map(a => `
+         <div class="ability_value" data-ability="${a.name}">
+              <div class="ddbc-box-background "><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 81 95" class="ddbc-svg ddbc-ability-score-box-svg "><path d="M4.52,13.62A34.66,34.66,0,0,1,3.08,6.26l0-.42.63-.2C5.22,5.18,9.41,3.35,9.41,1V0H71.59V1c0,2.37,4.19,4.2,5.66,4.66l.63.2,0,.42a35.34,35.34,0,0,1-1.44,7.36L76,7.3C74.42,6.71,70.47,5,69.74,2H11.26C10.52,5,6.58,6.71,5,7.3ZM2.32,79.46H2.6c.08-1.12.16-2.38.24-3.76A13,13,0,0,1,.63,69.83,9.4,9.4,0,0,1,3.21,62.6V61.43S1.83,35.67.56,31.56L.4,31l.47-.29a12.31,12.31,0,0,0,2.2-1.87,6.23,6.23,0,0,0,1.55-2.24A5.08,5.08,0,0,0,5,23.27c0-.11-.58-1.35-1.12-3l-.26,2.85c.27.79.5,1.63.71,2.49a5.17,5.17,0,0,1-1.56,2A33.13,33.13,0,0,0,1.74,23.6l-.07-.2L2.91,9.63c0,2,1.38,6.53,1.38,6.53a36.23,36.23,0,0,0,2.1,6.67A7.13,7.13,0,0,1,5,28.71C6.68,38,5.08,71,4.87,74.89A15.6,15.6,0,0,1,3,71.41c.08-2,.13-4.16.16-6.41a7.57,7.57,0,0,0-1.15,4.71,12,12,0,0,0,2.1,5.41l.15.22.45.64.06.07h0a29.64,29.64,0,0,0,5.74,5.66A39.48,39.48,0,0,1,14,83.83h0l.26.18c.79.54,1.55,1.09,2.29,1.65l.18.13h0c1.42,1.09,2.71,2.17,3.78,3.11,1.39,0,2.75.11,4,.22a16.4,16.4,0,0,1-3.19-3.33H17.91l-2.49-2h2.32a16.19,16.19,0,0,1-.88-4.16,4.31,4.31,0,0,1-5.21,1.79c.59.18,3,.53,5.24-4.08v0a8.24,8.24,0,0,1,2.52-5.32,13.54,13.54,0,0,0-1,10.29A1.76,1.76,0,0,0,19.8,83,11.36,11.36,0,0,1,19,78.77c0-8.55,9.66-15.51,21.54-15.51S62,70.22,62,78.77A11.36,11.36,0,0,1,61.2,83a1.76,1.76,0,0,0,1.34-.64,13.54,13.54,0,0,0-1-10.29A8.24,8.24,0,0,1,64.1,77.4v0c2.2,4.61,4.64,4.26,5.24,4.08a4.31,4.31,0,0,1-5.21-1.79,16.19,16.19,0,0,1-.88,4.16h2.32l-2.49,2H59.68a16.4,16.4,0,0,1-3.19,3.33c1.2-.11,2.57-.21,4-.22,1.07-.94,2.36-2,3.78-3.11h0l.18-.13c.74-.56,1.5-1.11,2.29-1.65l.26-.18h0a39.48,39.48,0,0,1,3.49-2.11,29.64,29.64,0,0,0,5.74-5.66h0l.06-.07.45-.64.15-.22A12,12,0,0,0,79,69.71,7.64,7.64,0,0,0,77.8,65c0,2.25.08,4.41.16,6.41a15.6,15.6,0,0,1-1.83,3.48C75.92,71,74.32,38,76,28.71a7.1,7.1,0,0,1-1.34-5.88,38.28,38.28,0,0,0,2.09-6.67s1.4-4.48,1.38-6.53L79.33,23.4l-.07.2a33.13,33.13,0,0,0-1.07,4.08,5.39,5.39,0,0,1-1.57-2c.22-.86.45-1.7.71-2.49l-.25-2.85c-.54,1.61-1.07,2.85-1.12,3a5.08,5.08,0,0,0,.42,3.36,6.23,6.23,0,0,0,1.55,2.24,12.31,12.31,0,0,0,2.2,1.87l.48.29-.17.53c-1.26,4.11-2.64,29.87-2.64,29.87,0,.39,0,.79,0,1.17a9.4,9.4,0,0,1,2.58,7.23,13.37,13.37,0,0,1-2.2,5.89c.07,1.38.15,2.64.23,3.76h.28c1.49-.12,2.79.71,2.16,1.75a2.46,2.46,0,0,1-1.72,1.15,2.58,2.58,0,0,0,.75-.85c.17-.3,0-.44-.14-.51l-.38,0h0a7.86,7.86,0,0,0-.84,0c.18,2.31.32,3.71.33,3.79L79,85.79H66.64c-1.46,1-2.84,2.15-4,3.15a11.85,11.85,0,0,1,7,2.12l-2.75,1.09h0a30,30,0,0,1-5.35,1.74h0l-.33,0L61,94c-9.66,1.67-10.67.75-10.67.75A10.09,10.09,0,0,0,57.11,92l.23-.24c.1-.1.62-.62,1.46-1.4-.62,0-1.22.07-1.81.12h0l-.44,0a8.82,8.82,0,0,0-1.18.23,7.12,7.12,0,0,0-.87.27l-.14,0a6.24,6.24,0,0,0-1,.44l-.11.07a5.63,5.63,0,0,0-.77.54l-.22.19a4.82,4.82,0,0,0-.75.86l-7.89.9.06,0a26.18,26.18,0,0,1-6.46,0l.06,0-7.89-.9a4.5,4.5,0,0,0-.76-.86l-.22-.2a7,7,0,0,0-.79-.55l-.09-.06a8.88,8.88,0,0,0-.95-.44L26.45,91c-.3-.11-.59-.2-.86-.27-.46-.11-.86-.17-1.14-.21l-.44,0h0c-.59,0-1.19-.09-1.81-.12.84.78,1.36,1.3,1.45,1.4l.24.24a10.09,10.09,0,0,0,6.78,2.71s-1,.92-10.67-.75l-.24,0-.33,0h0a29.76,29.76,0,0,1-5.35-1.74h0l-2.75-1.09a11.85,11.85,0,0,1,7-2.12c-1.2-1-2.58-2.1-4-3.15H2l.12-1.08c0-.08.15-1.48.33-3.79a7.86,7.86,0,0,0-.84,0h0l-.38,0c-.17.07-.31.21-.14.51a2.5,2.5,0,0,0,.74.85A2.47,2.47,0,0,1,.16,81.21c-.63-1,.67-1.87,2.16-1.75ZM76.78,49.11c.53-5.66,1.25-14.21,2.15-17.46a15.6,15.6,0,0,1-1.28-1,144.6,144.6,0,0,0-.87,18.5ZM74.63,80a11.89,11.89,0,0,1,1.8-.35c0-.46-.07-1-.1-1.48-.57.67-1.15,1.28-1.7,1.83Zm-5,3.82h7.17c-.06-.66-.15-1.61-.24-2.76a18.56,18.56,0,0,0-6.93,2.76ZM58.69,92.48l.07,0c1.06.59,4.54-.45,7.31-1.59a17.09,17.09,0,0,0-5.08-.6c-1.07,1-1.88,1.72-2.3,2.14ZM40.5,92.14c7,0,13-2.55,16.48-6.35.27-.3.53-.62.78-.94a.61.61,0,0,1,.07-.1,9.16,9.16,0,0,0,.61-.92,9.74,9.74,0,0,0,1.46-5.06c0-7.37-8.7-13.37-19.4-13.37s-19.4,6-19.4,13.37a9.83,9.83,0,0,0,1.45,5.06c.19.32.4.62.62.92l.08.1c.24.32.5.64.77.94,3.43,3.8,9.52,6.35,16.48,6.35ZM20,90.34a17.09,17.09,0,0,0-5.08.6c2.78,1.14,6.25,2.18,7.31,1.59l.07,0c-.42-.42-1.22-1.18-2.3-2.14ZM4.57,79.66a12.14,12.14,0,0,1,1.8.35c-.55-.55-1.13-1.16-1.7-1.83,0,.52-.07,1-.1,1.48Zm-.35,4.17h7.17a18.62,18.62,0,0,0-6.93-2.76c-.09,1.15-.18,2.1-.24,2.76Zm0-34.72a144.6,144.6,0,0,0-.87-18.5,15.6,15.6,0,0,1-1.28,1C3,34.9,3.68,43.45,4.22,49.11Z"></path></svg></div>
+              <div class="ability_name">${a.name.toUpperCase()}</div>
+              <div class="ability_modifier">${a.modifier}</div>
+              <div class="ability_score">${a.score}</div>
+          </div>
+      `).join(''));
       row.append(abilities);
+      let moreInfo = $(`<div class='moreInfo' style='font-size:12px;'>
+         ${pc.castingInfo.saveDcs.length>0 ? `<div style='margin-top:5px'><strong style='margin-left:5px;'>Spell Save DCs</strong>${pc.castingInfo.saveDcs.map(a => `<div style='margin-left:15px'>${a.sources[0]}: ${a.value}</div>`).join('')}` : ``}
+         ${pc.resistances.length>0 ? `<div style='margin-top:5px'><strong style='margin-left:5px;'>Resistances</strong><div style='margin-left:15px'>${pc.resistances.map(a => `${a.name}`).join(', ')}</div></div>` : ``}
+         ${pc.immunities.length>0 ? `<div style='margin-top:5px'><strong style='margin-left:5px;'>Immunities</strong><div style='margin-left:15px'>${pc.immunities.map(a => `${a.name}`).join(', ')}</div></div>` : ``}
+         ${pc.vulnerabilities.length>0 ? `<div style='margin-top:5px'><strong style='margin-left:5px;'>Vulnerabilities</strong><div style='margin-left:15px'>${pc.vulnerabilities.map(a => `${a.name}`).join(', ')}</div></div>` : ``}
+         ${pc.senses.length>0 ? `<div style='margin-top:5px'><strong style='margin-left:5px;'>Senses</strong><div style='margin-left:15px'>${pc.senses.map(a => `${a.name} ${a.distance}`).join(', ')}</div></div>` : ``}
+         ${pc.proficiencyGroups.length>0 ? `<div style='margin-top:5px'><strong style='margin-left:5px;'>Proficiencies</strong> ${pc.proficiencyGroups.map(a => `<div style='margin-left:15px'><strong>${a.group}:</strong> ${a.values == "" ? `None` : a.values}</div>`).join('')}</div>` : ``}  
+       </div>`)
+      row.append(moreInfo);
       let expandButton = $(`<div class="player-expansion-button"><span class="material-icons">expand_more</span></div>`);
       row.append(expandButton);
       expandButton.on("click", function (clickEvent) {
@@ -1200,12 +1364,12 @@ function build_sidebar_list_row(listItem) {
       subtitle.text("");
       subtitle.show();
       subtitle.append(`<div class="subtitle-attibute inspiration" title="Player Has Inspiration"><img src="${window.EXTENSION_PATH}assets/inspiration.svg" title="Inspiration"  alt="inspiration"/></div>`);
-      subtitle.append(`<div class="subtitle-attibute" title="Walk Speed"><span class="material-icons">directions_run</span><span class="walking-value"">${playerData.walking}</span></div>`);
+      subtitle.append(`<div class="subtitle-attibute" title="Walk Speed"><span class="material-icons">directions_run</span><span class="walking-value"">${walkingSpeed}</span></div>`);
 
-      let climbingSvg = `    
+      let climbingSvg = `
       <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" id="Layer_1" x="0px" y="0px" viewBox="0 0 100 100" width:"16px" xml:space="preserve">
       <style type="text/css">
-        .st0{fill:#738694;}
+        .climb-svg .st0{fill:#738694;}
       </style>
       <path class="st0" d="M46.1,24.9c4.1,0,7.4-3.3,7.4-7.3c0-4.1-3.3-7.4-7.4-7.4c-4.1,0-7.4,3.3-7.4,7.4C38.7,21.6,42,24.9,46.1,24.9z   M59.7,44.2c0,0,0,3.1,0,3.1C79.9,37.2,87.7,2.9,87.7,0H85C83.9,7.2,75.2,35.9,59.7,44.2z M53.5,100h3.1V66.9l-3.1,1.5V100z   M27.4,41.4l10.7-4.2V52h18.5V34.8L73.1,8.3c1.2-1.9,0.7-4.5-1.3-5.7c-1.9-1.2-4.5-0.7-5.6,1.2L52.2,26.4l-8.5,0  c-0.5,0-1.1,0.1-1.6,0.3l-14.6,5.7L19.9,21c-1.2-1.9-3.8-2.5-5.7-1.2c-1.9,1.2-2.5,3.8-1.3,5.8l9.4,14.3  C23.4,41.4,25.5,42.2,27.4,41.4z M72.2,51.1c-0.7-2.6-3.8-4.6-6.3-3.4L56.6,52v3.1H38.1L23.6,88.3c-1.1,2.5,0.1,5.7,2.7,7.1  c2.6,1.5,5.6,0.6,6.6-1.9l11.8-27.2c1,0.3,2.2,0.4,3.3,0.4c1.1,0,2.1-0.2,3-0.5l13.3-6.2l2.9,11.7c0.7,2.6,3.3,4.2,5.9,3.5  s4.2-3.3,3.5-5.9L72.2,51.1z"/>
       </svg>`;
@@ -1219,14 +1383,14 @@ function build_sidebar_list_row(listItem) {
         <rect x="71.93" y="242.252" width="3.333" height="64"/>
       </g>
       </svg>`;
-      subtitle.append(`<div class="subtitle-attibute" title="Climb Speed"><span class="climb-svg">${climbingSvg}</span><span class="climb-value"">${playerData.climb}</span></div>`);
-      subtitle.append(`<div class="subtitle-attibute" title="Fly Speed"><span class="fly-svg">${flyingSvg}</span><span class="fly-value"">${playerData.fly}</span></div>`);
-      subtitle.append(`<div class="subtitle-attibute" title="Swim Speed"><span class="material-icons">pool</span><span class="swim-value"">${playerData.swim}</span></div>`);
+      subtitle.append(`<div class="subtitle-attibute" title="Climb Speed"><span class="climb-svg">${climbingSvg}</span><span class="climb-value"">${climbingSpeed}</span></div>`);
+      subtitle.append(`<div class="subtitle-attibute" title="Fly Speed"><span class="fly-svg">${flyingSvg}</span><span class="fly-value"">${flySpeed}</span></div>`);
+      subtitle.append(`<div class="subtitle-attibute" title="Swim Speed"><span class="material-icons">pool</span><span class="swim-value"">${swimSpeed}</span></div>`);
 
 
 
 
-      if (playerData.inspiration) {
+      if (pc.inspiration) {
         subtitle.find(".inspiration").show();
       } else {
         subtitle.find(".inspiration").hide();
@@ -1258,9 +1422,11 @@ function build_sidebar_list_row(listItem) {
       } else if (listItem.monsterData.isReleased === false) {
         subtitle.append(`<div class="subtitle-attibute"><span class="material-icons" style="color:darkred">block</span>No Access</div>`);
       }
-
+      if (window.ddbConfigJson?.sources?.find(source => source.id == listItem.monsterData.sourceId)) {
+        subtitle.append(`<div class="subtitle-attibute"><span class="material-icons" style="width: 15px;font-family: 'Material Symbols Outlined'; font-size:15px;">book_2</span><span>${window.ddbConfigJson?.sources?.find(source => source.id == listItem.monsterData.sourceId)?.name}</span></div>`);
+      }
       if (listItem.monsterData.isLegacy === true) {
-        subtitle.append(`<div class="legacy-monster"><span>Legacy</span></div>`);
+        subtitle.append(`<div class="subtitle-attibute legacy-attribute"><div class="legacy-monster"><span>Legacy</span></div></div>`);
       }
 
       if ((typeof listItem.monsterData.quantity == "number") && listItem.monsterData.quantity > 1 && title.find(".monster-quantity").length === 0) {
@@ -1273,40 +1439,52 @@ function build_sidebar_list_row(listItem) {
       }
 
       break;
+    case ItemType.Open5e:
+      row.attr("data-monster", listItem.monsterData.id);
+      subtitle.append(`<div class="subtitle-attibute"><span class="plain-text">CR</span>${convert_challenge_rating_id(listItem.monsterData.challengeRatingId)}</div>`);
+      if (listItem.monsterData.isHomebrew === true) {
+        subtitle.append(`<div class="subtitle-attibute"><span class="material-icons" style="width: 15px;font-family: 'Material Symbols Outlined'; font-size:15px;">book_2</span>${listItem.monsterData.document__slug}</div>`);
+      } 
+      break;
     case ItemType.BuiltinToken:
     case ItemType.DDBToken:
       subtitle.hide();
       row.css("cursor", "default");
       break;
     case ItemType.Scene:
-      row.attr("data-scene-id", listItem.sceneId);
       row.addClass("scene-item");
       imgHolder.remove(); // we don't want the overhead of full images loading in. Clicking the row displays a preview of the image
       row.css("cursor", "pointer");
       row.attr("title", `${listItem.name}\nclick to preview`);
       let switch_dm = $(`<button class='dm_scenes_button token-row-button' title="Move DM To This Scene"></button>`);
       switch_dm.append(svg_dm());
-      if(window.CURRENT_SCENE_DATA && window.CURRENT_SCENE_DATA.id === listItem.sceneId){
+      if(window.CURRENT_SCENE_DATA && window.CURRENT_SCENE_DATA.id === listItem.id){
         switch_dm.addClass("selected-scene");
       }
       switch_dm.on("click", function(clickEvent) {
         clickEvent.stopPropagation();
         $("#scenes-panel .dm_scenes_button.selected-scene").removeClass("selected-scene");
         $(clickEvent.currentTarget).addClass("selected-scene");
-        window.MB.sendMessage("custom/myVTT/switch_scene", { sceneId: listItem.sceneId, switch_dm: true });
+        window.MB.sendMessage("custom/myVTT/switch_scene", { sceneId: listItem.id, switch_dm: true });
         add_zoom_to_storage();
       });
       let switch_players = $(`<button class='player_scenes_button token-row-button' title="Move Players To This Scene"></button>`);
       switch_players.append(svg_everyone());
-      if(window.PLAYER_SCENE_ID === listItem.sceneId){
+      if(window.PLAYER_SCENE_ID === listItem.id){
         switch_players.addClass("selected-scene");
       }
       switch_players.on("click", function(clickEvent) {
         clickEvent.stopPropagation();
-        window.PLAYER_SCENE_ID = listItem.sceneId;
+        window.PLAYER_SCENE_ID = listItem.id;
         $("#scenes-panel .player_scenes_button.selected-scene").removeClass("selected-scene");
         $(clickEvent.currentTarget).addClass("selected-scene");
-        window.MB.sendMessage("custom/myVTT/switch_scene", { sceneId: listItem.sceneId });
+        window.MB.sendMessage("custom/myVTT/switch_scene", { sceneId: listItem.id });
+        let playerScene = window.ScenesHandler.scenes.filter(d => d.id == listItem.id)[0];
+        if(playerScene.playlist != undefined  && playerScene.playlist != 0 && window.MIXER.state().playlists[playerScene.playlist] != undefined){
+          window.MIXER.setPlaylist(playerScene.playlist)
+        }
+        window.splitPlayerScenes = {};
+        $('#scenes-panel .sidebar-list-item-row-details~img').remove();
         add_zoom_to_storage()
       });
       rowItem.append(switch_dm);
@@ -1329,7 +1507,7 @@ function build_sidebar_list_row(listItem) {
       break;
   }
 
-  if (listItem.canEdit() || listItem.isTypeBuiltinToken() || listItem.isTypeDDBToken()) { // can't edit builtin or DDB, but need access to the list of images for drag and drop reasons.
+  if (listItem.canEdit() || listItem.isTypeBuiltinToken() || listItem.isTypeDDBToken() || listItem.isTypeOpen5eMonster()) { // can't edit builtin or DDB, but need access to the list of images for drag and drop reasons.
     let settingsButton = $(`
         <div class="token-row-gear" title="configure">
             <img src="${window.EXTENSION_PATH}assets/icons/cog.svg" style="width:100%;height:100%;"  alt="settings icon"/>
@@ -1349,6 +1527,7 @@ function build_sidebar_list_row(listItem) {
  */
 function did_click_row(clickEvent) {
   clickEvent.stopPropagation();
+
   console.log("did_click_row", clickEvent);
   let clickedRow = $(clickEvent.target).closest(".list-item-identifier");
   let clickedItem = find_sidebar_list_item(clickedRow);
@@ -1384,6 +1563,10 @@ function did_click_row(clickEvent) {
         console.log(`User does not have access to monster with id ${clickedItem.monsterData.id}. Opening ${clickedItem.monsterData.url}`);
         window.open(clickedItem.monsterData.url, '_blank');
       }
+      break;
+    case ItemType.Open5e: 
+        console.log(`Opening open5e monster with id ${clickedItem.monsterData.slug}`);
+        open_monster_item(clickedItem, true);
       break;
     case ItemType.BuiltinToken:
       // display_builtin_token_details_modal(clickedItem);
@@ -1450,7 +1633,7 @@ function display_sidebar_list_item_configuration_modal(listItem) {
       window.open(`https://www.dndbeyond.com/encounters/${listItem.encounterId}/edit`, '_blank');
       break;
     case ItemType.Folder:
-      if (listItem.folderPath.startsWith(RootFolder.MyTokens.path) || listItem.folderPath.startsWith(RootFolder.Scenes.path)) {
+      if (listItem.canEdit()) {
         display_folder_configure_modal(listItem);
       } else {
         console.warn("Only allowed to folders within the My Tokens folder and Scenes");
@@ -1459,20 +1642,24 @@ function display_sidebar_list_item_configuration_modal(listItem) {
       break;
     case ItemType.BuiltinToken:
     case ItemType.DDBToken:
-      display_builtin_token_details_modal(listItem);
+      display_token_configuration_modal(listItem);
       break;
     case ItemType.MyToken:
+      display_token_configuration_modal(listItem);
+      break;
     case ItemType.PC:
     case ItemType.Monster:
       display_token_configuration_modal(listItem);
       break;
+    case ItemType.Open5e:
+      display_token_configuration_modal(listItem);
+      break;
     case ItemType.Scene:
-      let index = window.ScenesHandler.scenes.findIndex(s => s.id === listItem.sceneId);
+      let index = window.ScenesHandler.scenes.findIndex(s => s.id === listItem.id);
       if (index >= 0) {
         edit_scene_dialog(index);
       } else {
-        console.error("Failed to find scene index for scene with id", listItem.sceneId);
-        showDebuggingAlert();
+        showError("Failed to find scene index for scene with id", listItem.id);
       }
       break;
     case ItemType.Aoe:
@@ -1489,10 +1676,10 @@ function create_folder_inside(listItem) {
     return;
   }
 
-  if (listItem.fullPath().startsWith(RootFolder.MyTokens.path)) {
+  if (listItem.folderType === ItemType.MyToken) {
     create_mytoken_folder_inside(listItem);
-  } else if (listItem.fullPath().startsWith(RootFolder.Scenes.path)) {
-    create_scene_folder_inside(listItem.fullPath());
+  } else if (listItem.folderType === ItemType.Scene) {
+    create_scene_folder_inside(listItem);
   } else {
     console.warn("create_folder_inside called with an incorrect item type", listItem);
   }
@@ -1507,16 +1694,11 @@ function display_folder_configure_modal(listItem) {
     console.warn("display_folder_configure_modal was called with an incorrect type", listItem);
     return;
   }
+  console.log('display_folder_configure_modal', listItem);
 
   let sidebarId = "folder-configuration-modal";
   let sidebarModal = new SidebarPanel(sidebarId, true);
-  let listItemFullPath = listItem.fullPath();
-  let itemType;
-  if (listItemFullPath.startsWith(RootFolder.Scenes.path)) {
-    itemType = ItemType.Scene;
-  } else if (listItemFullPath.startsWith(RootFolder.MyTokens.path)) {
-    itemType = ItemType.MyToken;
-  }
+  let itemType = listItem.folderType;
 
   display_sidebar_modal(sidebarModal);
 
@@ -1524,38 +1706,68 @@ function display_folder_configure_modal(listItem) {
 
   const renameFolder = function(newFolderName, input, event) {
     let oldPath = harvest_full_path(input);
+    console.log(`renameFolder oldPath: ${oldPath}, newFolderName: ${newFolderName}`);
     if (oldPath.endsWith(`/${newFolderName}`)) {
       // It did not change. Nothing to do here.
       return undefined;
     }
     let foundItem = find_sidebar_list_item(input);
+    console.log(`before renameFolder foundItem id: ${foundItem.id}, name: ${foundItem.name}, folderPath: ${foundItem.folderPath}`);
     let updatedFullPath = rename_folder(foundItem, newFolderName, true);
+    console.log(`after  renameFolder foundItem id: ${foundItem.id}, name: ${foundItem.name}, folderPath: ${foundItem.folderPath}, updatedFullPath: ${updatedFullPath}`);
     if (updatedFullPath) {
       // the name has been changed. Update the input so we know it has been changed later
       set_full_path(input, updatedFullPath);
-      if (itemType === ItemType.Scene) {
-        rebuild_token_items_list();
-        redraw_scene_list();
-        expand_all_folders_up_to_id(path_to_html_id(updatedFullPath));
-      } else if (itemType === ItemType.Scene) {
-        rebuild_scene_items_list();
-        redraw_token_list();
-        expand_all_folders_up_to_id(foundItem.id);
-      }
+      console.log('inside updatedFullPath');      
       sidebarModal.updateHeader(newFolderName, updatedFullPath, "Edit or delete this folder.");
+      console.log('returning updatedFullPath');
       return updatedFullPath;
     } else {
+      console.log('else updatedFullPath');
       // there was a naming conflict, and the user has been alerted. select the entire text so they can easily change it
       input.select();
       return false;
     }
   }
 
-  let folderNameInput = $(`<input type="text" title="Folder Name" name="folderName" value="${listItem.name}" />`);
-  set_full_path(folderNameInput, listItemFullPath);
-  sidebarModal.body.append(build_text_input_wrapper("Folder Name", folderNameInput, undefined, renameFolder));
+  
 
-  if (itemType === ItemType.MyToken) {
+  let folderNameInput = $(`<input type="text" title="Folder Name" name="folderName" value="${listItem.name}" />`);
+  set_list_item_identifier(folderNameInput, listItem);
+  if (itemType === ItemType.MyToken || itemType === ItemType.Scene){
+    sidebarModal.body.append(build_text_input_wrapper("Folder Name", folderNameInput, undefined, renameFolder, false));
+  }
+
+  let tokenCustomizations = find_token_customization(listItem.type, listItem.id);
+  let folderColor = tokenCustomizations?.color ? tokenCustomizations?.color : listItem.color ? listItem.color : '#F4B459';
+
+  let folderColorInput = `<div class="token-image-modal-footer-select-wrapper">
+              <div class="token-image-modal-footer-select-wrapper">
+                 <div class="token-image-modal-footer-title">Folder Color</div>
+                  <div style="padding-left: 2px">
+                      <input class="spectrum" name="folderColor" value="${folderColor}" >
+                  </div>
+              </div>`;
+
+  sidebarModal.body.append(folderColorInput);
+  let colorPickers = sidebarModal.body.find('input.spectrum');
+  colorPickers.spectrum({
+      type: "color",
+      showInput: true,
+      showInitial: true,
+      containerClassName: 'prevent-sidebar-modal-close',
+      clickoutFiresChange: true,
+      appendTo: "parent"
+  });
+  sidebarModal.body.find("input[name='folderColor']").spectrum("set", folderColor);
+  const colorPickerChange = function(e, tinycolor) {
+      listItem.color = `rgba(${tinycolor._r}, ${tinycolor._g}, ${tinycolor._b}, ${tinycolor._a})`;
+  };
+  colorPickers.on('dragstop.spectrum', colorPickerChange);   // update the token as the player messes around with colors
+  colorPickers.on('change.spectrum', colorPickerChange); // commit the changes when the user clicks the submit button
+  colorPickers.on('hide.spectrum', colorPickerChange);   // the hide event includes the original color so let's change it back when we get it
+
+  if (itemType === ItemType.MyToken || (listItem.isTypeFolder() && itemType !== ItemType.Scene)) {
     let customization = find_or_create_token_customization(ItemType.Folder, listItem.id, listItem.parentId, RootFolder.MyTokens.id);
     let folderOptionsButton = build_override_token_options_button(sidebarModal, listItem, undefined, customization.tokenOptions, function (key, value) {
       customization.setTokenOption(key, value);
@@ -1567,42 +1779,60 @@ function display_folder_configure_modal(listItem) {
 
   let saveButton = $(`<button class="sidebar-panel-footer-button" style="width:100%;padding:8px;margin-top:8px;margin-left:0px;">Save Folder</button>`);
   saveButton.on("click", function (clickEvent) {
-    let nameInput = $(clickEvent.currentTarget).closest(".sidebar-panel-body").find("input[name='folderName']");
-    let renameResult = renameFolder(nameInput.val(), nameInput, clickEvent);
-    if (renameResult !== false) {
-      close_sidebar_modal();
-      expand_all_folders_up_to_item(listItem); // TODO: make sure this does the right thing. We may need to find the updated listItem
+    if (itemType === ItemType.MyToken || itemType === ItemType.Scene){
+      let nameInput = $(clickEvent.currentTarget).closest(".sidebar-panel-body").find("input[name='folderName']");
+      console.log(`saveButton nameInput`, nameInput);
+      let renameResult = renameFolder(nameInput.val(), nameInput, clickEvent);
     }
+    close_sidebar_modal();
+    if(itemType === ItemType.MyToken || (listItem.isTypeFolder() && itemType !== ItemType.Scene)){
+      let customization = find_or_create_token_customization(ItemType.Folder, listItem.id, listItem.parentId, RootFolder.MyTokens.id);
+      customization.color = listItem.color;
+      persist_token_customization(customization);
+      rebuild_token_items_list();
+      filter_token_list($('[name="token-search"]').val() ? $('[name="token-search"]').val() : "");   
+    }
+    else{ 
+      let sceneIndex = window.ScenesHandler.scenes.findIndex( d => d.id == listItem.id);
+      window.ScenesHandler.scenes[sceneIndex].color = listItem.color;
+      window.ScenesHandler.persist_scene(sceneIndex);
+      did_update_scenes();
+    }
+    
+    expand_all_folders_up_to_id(listItem.id);
+
   });
   sidebarModal.body.append(saveButton);
+  if(!RootFolder.allValues().some(d => d.id == listItem.id) && itemType !== ItemType.BuiltinToken){
+    let deleteFolderAndMoveChildrenButton = $(`<button class="token-image-modal-remove-all-button" title="Delete this folder">Delete folder and<br />move items up one level</button>`);
+    set_list_item_identifier(deleteFolderAndMoveChildrenButton, listItem);
+    sidebarModal.footer.append(deleteFolderAndMoveChildrenButton);
+    deleteFolderAndMoveChildrenButton.on("click", function(event) {
+      let foundItem = find_sidebar_list_item($(event.currentTarget));
+      delete_folder_and_move_children_up_one_level(foundItem);
+      close_sidebar_modal();
+      expand_all_folders_up_to_item(foundItem);
+    });
+    let deleteFolderAndChildrenButton = $(`<button class="token-image-modal-remove-all-button" title="Delete this folder and everything in it">Delete folder and<br />everything in it</button>`);
+    set_list_item_identifier(deleteFolderAndChildrenButton, listItem);
+    sidebarModal.footer.append(deleteFolderAndChildrenButton);
+    deleteFolderAndChildrenButton.on("click", function(event) {
+      let foundItem = find_sidebar_list_item($(event.currentTarget));
+      delete_folder_and_delete_children(foundItem);
+      close_sidebar_modal();
+      expand_all_folders_up_to_item(foundItem);
+    });
+  }
 
-  let deleteFolderAndMoveChildrenButton = $(`<button class="token-image-modal-remove-all-button" title="Delete this folder">Delete folder and<br />move items up one level</button>`);
-  set_full_path(deleteFolderAndMoveChildrenButton, listItemFullPath);
-  sidebarModal.footer.append(deleteFolderAndMoveChildrenButton);
-  deleteFolderAndMoveChildrenButton.on("click", function(event) {
-    let foundItem = find_sidebar_list_item($(event.currentTarget));
-    delete_folder_and_move_children_up_one_level(foundItem);
-    close_sidebar_modal();
-    expand_all_folders_up_to_item(foundItem);
-  });
-  let deleteFolderAndChildrenButton = $(`<button class="token-image-modal-remove-all-button" title="Delete this folder and everything in it">Delete folder and<br />everything in it</button>`);
-  set_full_path(deleteFolderAndChildrenButton, listItemFullPath);
-  sidebarModal.footer.append(deleteFolderAndChildrenButton);
-  deleteFolderAndChildrenButton.on("click", function(event) {
-    let foundItem = find_sidebar_list_item($(event.currentTarget));
-    delete_folder_and_delete_children(foundItem);
-    close_sidebar_modal();
-    expand_all_folders_up_to_item(foundItem);
-  });
 
   sidebarModal.body.find(`input[name="folderName"]`).select();
 }
 
 function rename_folder(item, newName, alertUser = true) {
-  if (!item.isTypeFolder()) {
+  if (!item || !item.isTypeFolder()) {
     console.warn("rename_folder called with an incorrect item type", item);
     if (alertUser !== false) {
-      showDebuggingAlert();
+      showError("Failed to rename folder", item);
     }
     return undefined;
   }
@@ -1613,10 +1843,10 @@ function rename_folder(item, newName, alertUser = true) {
     persist_token_customization(customization);
     did_change_mytokens_items();
     return customization.fullPath();
-  } else if (item.folderPath.startsWith(RootFolder.Scenes.path)) {
+  } else if (item.isTypeSceneFolder()) {
     return rename_scene_folder(item, newName, alertUser);
   } else if (alertUser !== false) {
-    showDebuggingAlert();
+    showError("Failed to find folder path", item);
   }
   return undefined;
 }
@@ -1641,8 +1871,7 @@ function delete_item(listItem) {
       break;
     case ItemType.Scene:
       if (confirm(`Are you sure that you want to delete the scene named "${listItem.name}"?`)) {
-        window.ScenesHandler.delete_scene(listItem.sceneId);
-        did_update_scenes();
+        window.ScenesHandler.delete_scene(listItem.id);
       }
       break;
     case ItemType.PC:
@@ -1672,6 +1901,13 @@ function expand_all_folders_up_to_item(listItem) {
 function expand_all_folders_up_to_id(id) {
   if (typeof id !== "string" || id.length === 0) return;
   let element = $(`#${id}`)
+  if (element.length === 0) {
+    element = $(`[data-id="${id}"]`);
+  }
+  if (element.length === 0) {
+    console.warn(`expand_all_folders_up_to_id failed to find a folder with id ${id}`);
+    return;
+  }
   element.parents(".collapsed").removeClass("collapsed");
   element.removeClass("collapsed");
 }
@@ -1690,11 +1926,10 @@ function delete_folder_and_delete_children(listItem) {
     return;
   }
 
-  if (listItem.folderPath.startsWith(RootFolder.MyTokens.path)) {
+  if (listItem.folderType === ItemType.MyToken) {
     delete_mytokens_folder_and_everything_in_it(listItem);
-  } else if (listItem.folderPath.startsWith(RootFolder.Scenes.path)) {
-    delete_scenes_within_folder(listItem);
-    delete_scenes_folder(listItem);
+  } else if (listItem.folderType === ItemType.Scene) {
+    delete_folder_and_all_scenes_within_it(listItem);
     did_update_scenes();
     expand_all_folders_up_to_item(listItem);
   } else {
@@ -1717,16 +1952,16 @@ function delete_folder_and_move_children_up_one_level(listItem) {
     return;
   }
 
-  if (listItem.folderPath.startsWith(RootFolder.MyTokens.path)) {
+  if (listItem.folderType === ItemType.MyToken) {
     move_mytokens_to_parent_folder_and_delete_folder(listItem, function (didSucceed, errorType) {
       did_change_mytokens_items();
       expand_all_folders_up_to_id(listItem.parentId);
     });
-  } else if (listItem.folderPath.startsWith(RootFolder.Scenes.path)) {
+  } else if (listItem.folderType === ItemType.Scene) {
     move_scenes_to_parent_folder(listItem);
     delete_scenes_folder(listItem);
     did_update_scenes();
-    expand_all_folders_up_to_item(listItem);
+    expand_all_folders_up_to_id(listItem.parentId);
   } else {
     console.warn("delete_folder_and_move_children_up_one_level called with an incorrect item type", listItem);
   }
@@ -1792,9 +2027,15 @@ function position_flyout_right_of(container, flyout) {
   flyout.css("left", container[0].getBoundingClientRect().left + container.width());
 }
 
-function remove_sidebar_flyout() {
+function remove_sidebar_flyout(removeHoverNote) {
   console.log("remove_sidebar_flyout");
-  $(`.sidebar-flyout`).remove();
+  let flyouts = $(`.sidebar-flyout`)
+  let hovered = $(`.tooltip-flyout:hover`).length>0 == true;
+  if(removeHoverNote == false){
+    flyouts = $(`.sidebar-flyout:not('.note-flyout')`)
+  }
+  if(!hovered)
+    flyouts.remove();
 }
 
 function list_item_image_flyout(hoverEvent) {
@@ -1810,7 +2051,7 @@ function list_item_image_flyout(hoverEvent) {
   }
 }
 
-function disable_draggable_change_folder() {
+function  disable_draggable_change_folder() {
   window.reorderState = undefined;
   $(".token-row-drag-handle").remove();
 
@@ -1823,7 +2064,9 @@ function disable_draggable_change_folder() {
       tokensPanel.body.removeClass("folder");
       tokensPanel.header.find("input[name='token-search']").show();
       tokensPanel.updateHeader("Tokens");
-      add_expand_collapse_buttons_to_header(tokensPanel);
+      
+      add_expand_collapse_buttons_to_header(tokensPanel, true);
+
       try {
         tokensPanel.body.find(".sidebar-list-item-row").draggable("destroy");
       } catch (e) {} // don't care if it fails, just try
@@ -1853,7 +2096,8 @@ function disable_draggable_change_folder() {
   }
 }
 
-function add_expand_collapse_buttons_to_header(sidebarPanel) {
+function add_expand_collapse_buttons_to_header(sidebarPanel, addHideButton=false) {
+
   let expandAll = $(`<button class="token-row-button expand-collapse-button" title="Expand All Folders" style=""><span class="material-icons">expand</span></button>`);
   expandAll.on("click", function (clickEvent) {
     $(clickEvent.target).closest(".sidebar-panel-content").find(".sidebar-panel-body .folder:not(.not-collapsible)").removeClass("collapsed");
@@ -1864,6 +2108,23 @@ function add_expand_collapse_buttons_to_header(sidebarPanel) {
   });
   let buttonWrapper = $("<div class='expand-collapse-wrapper'></div>");
   sidebarPanel.header.find(".sidebar-panel-header-title").append(buttonWrapper);
+  if(addHideButton){
+    let hideButton = $(`<button class="token-row-button reveal-hidden-button" title="Reveal hidden folders/tokens" style=""><span class="material-icons">disabled_visible</span></button>`);
+    hideButton.on("click", function (clickEvent) {
+      if($(this).hasClass('clicked')){
+        $(clickEvent.target).closest(".sidebar-panel-content").find(".sidebar-panel-body .hidden-sidebar-item").toggleClass("temporary-visible", false);
+        $(this).toggleClass('clicked', false);
+      }
+      else{
+        $(clickEvent.target).closest(".sidebar-panel-content").find(".sidebar-panel-body .hidden-sidebar-item").toggleClass("temporary-visible", true);
+        $(this).toggleClass('clicked', true);
+      }  
+    });
+    if($('.temporary-visible').length>0){
+      $(hideButton).toggleClass('clicked', true);
+    }
+    buttonWrapper.append(hideButton);
+  }
   buttonWrapper.append(expandAll);
   buttonWrapper.append(collapseAll);
 }
@@ -1885,24 +2146,17 @@ function enable_draggable_change_folder(listItemType) {
       let draggedRow = $(ui.helper);
       let draggedItem = find_sidebar_list_item(draggedRow);
       let droppedFolder = $(dropEvent.target);
-      if (droppedFolder.hasClass("sidebar-panel-body") || droppedFolder.attr("id") === path_to_html_id(RootFolder.Scenes.path)) {
+      if (droppedFolder.hasClass("sidebar-panel-body") || droppedFolder.attr("id") === RootFolder.Scenes.id) {
         // they dropped it on the header so find the root folder
-        if (listItemType === ItemType.Scene) {
-          if (draggedItem.isTypeFolder()) {
-            move_scenes_folder(draggedItem, RootFolder.Scenes.path);
-          } else {
-            move_scene_to_folder(draggedItem, RootFolder.Scenes.path);
-          }
-          did_update_scenes();
-          enable_draggable_change_folder(ItemType.Scene);
-        } else if (listItemType === ItemType.MyToken) {
+        if (window.reorderState === ItemType.Scene) {
+          move_item_into_folder_item(draggedItem, RootFolder.Scenes.id);
+        } else if (window.reorderState === ItemType.MyToken) {
           let customization = find_token_customization(draggedItem.type, draggedItem.id);
           customization.parentId = RootFolder.MyTokens.id;
           persist_token_customization(customization);
           rebuild_token_items_list();
-          enable_draggable_change_folder(ItemType.MyToken);
         } else {
-          console.warn("Unable to reorder item by dropping it on the body", listItemType, draggedItem);
+          console.warn("Unable to reorder item by dropping it on the body", window.reorderState, draggedItem);
         }
       } else {
         let folderItem = find_sidebar_list_item(droppedFolder);
@@ -1913,11 +2167,10 @@ function enable_draggable_change_folder(listItemType) {
     }
   };
 
-  switch (listItemType) {
+  switch (window.reorderState) {
     case ItemType.MyToken:
 
-      redraw_token_list("", false);
-
+      redraw_token_list("", false)
       tokensPanel.body.find(".token-row-gear").hide();
       tokensPanel.body.find(".token-row-button").hide();
       // tokensPanel.body.find(".folder").removeClass("collapsed");
@@ -1937,18 +2190,25 @@ function enable_draggable_change_folder(listItemType) {
 
       // TODO: disable the draggable that was added here enable_draggable_token_creation
       // tokensPanel.body.find(".sidebar-list-item-row").draggable("destroy");
+      let offsetStart = {};
       tokensPanel.body.find(".sidebar-list-item-row").draggable({
-        container: tokensPanel.body,
-        opacity: 0.7,
+        containment: tokensPanel.body,
+        appendTo: tokensPanel.body,
         revert: true,
-        scroll: false, // jQuery UI has a bug where scrolling changes the offset of the helper. If we can figure out how to work around that bug, then we can change this to true
-        // axis: "y",  // this helps if we set scroll: true
+        scroll: true,
+        start: function(e, ui){
+          offsetStart= tokensPanel.body.scrollTop();
+        },
+        drag: function(e, ui){
+          ui.position.top = ui.position.top - tokensPanel.body.scrollTop() + offsetStart
+        },
         helper: function (event) {
           let draggedRow = $(event.target).closest(".list-item-identifier");
           let draggedItem = find_sidebar_list_item(draggedRow);
           if (draggedItem.isTypeFolder()) {
             draggedRow.addClass("collapsed");
           }
+
           draggedRow.addClass("draggable-sidebar-item-reorder");
           return draggedRow;
         },
@@ -1958,7 +2218,6 @@ function enable_draggable_change_folder(listItemType) {
           if (draggedRow.hasClass("drag-cancelled")) {
             draggedRow.removeClass("drag-cancelled");
             redraw_token_list("", false);
-            enable_draggable_change_folder(ItemType.MyToken);
           }
         }
       });
@@ -1967,6 +2226,9 @@ function enable_draggable_change_folder(listItemType) {
       myTokensRootFolder.find(".folder").droppable(droppableOptions);  // allow dropping on folders within MyTokens folder
       tokensPanel.body.addClass("folder").addClass("not-collapsible");  // allow dropping on folders within MyTokens folder
       tokensPanel.body.droppable(droppableOptions);  // allow dropping on folders within MyTokens folder
+      
+
+     
 
       break;
     case ItemType.Scene:
@@ -2000,7 +2262,6 @@ function enable_draggable_change_folder(listItemType) {
           if (draggedRow.hasClass("drag-cancelled")) {
             draggedRow.removeClass("drag-cancelled");
             redraw_scene_list("");
-            enable_draggable_change_folder(ItemType.Scene);
           }
         }
       });
@@ -2022,14 +2283,9 @@ function move_item_into_folder_item(listItem, folderItem) {
     persist_token_customization(customization);
     rebuild_token_items_list();
     enable_draggable_change_folder(ItemType.MyToken);
-  } else if (listItem.isTypeScene() || (listItem.isTypeFolder() && listItem.folderPath.startsWith(RootFolder.Scenes.path))) {
-    if (listItem.isTypeScene()) {
-      move_scene_to_folder(listItem, folderItem.fullPath());
-    } else if (listItem.isTypeFolder()) {
-      move_scenes_folder(listItem, folderItem.fullPath());
-    }
+  } else if (listItem.isTypeScene() || listItem.isTypeSceneFolder()) {
+    move_scene_to_folder(listItem, folderItem.id);
     did_update_scenes();
-    enable_draggable_change_folder(ItemType.Scene);
   } else {
     console.warn("move_item_into_folder_item was called with invalid item type", listItem);
   }

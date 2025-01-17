@@ -18,7 +18,7 @@ class ChatObserver {
                     input.val("");
                     return;
                 }
-                let slashCommandMatch = value.match(slashCommandRegex);
+                let slashCommandMatch = value.match(diceRollCommandRegex);
                 if (slashCommandMatch?.index === 0) {
                     if (self.#parseSlashCommand(value)) {
                         self.#didSubmit(input, value);
@@ -61,20 +61,25 @@ class ChatObserver {
 
     #parseSlashCommand(text) {
         let diceRoll = DiceRoll.fromSlashCommand(text);
-        let didSend = window.diceRoller.roll(diceRoll);
+     
+        let didSend = window.diceRoller.roll(diceRoll); // TODO: update this with more details?
         if (didSend === false) {
             // it was too complex so try to send it through rpgDiceRoller
-            let expression = text.replace(slashCommandRegex, "").match(allowedExpressionCharactersRegex)?.[0];
+            let expression = text.replace(diceRollCommandRegex, "").match(allowedExpressionCharactersRegex)?.[0];
             didSend = send_rpg_dice_to_ddb(expression, window.pc.name, window.pc.image, rollType, undefined, action);
         }
         return didSend;
+        
+
     }
 
-    #sendChatMessage(text) {
+    async #sendChatMessage(text) {
         let data = {
             player: window.PLAYER_NAME,
             img: window.PLAYER_IMG,
-            dmonly: false
+            dmonly: false,
+            language: $('#chat-language').val()
+
         };
 
         if (text.startsWith("/w")) {
@@ -86,7 +91,8 @@ class ChatObserver {
         } else if (validateUrl(text)) {
             data.text = `
                 <a class='chat-link' href='${text}' target='_blank' rel='noopener noreferrer'>${text}</a>
-                <img width=200 class='magnify' src='${parse_img(text)}' href='${parse_img(text)}' alt='Chat Image' style='display: none'/>
+                <img width=100% class='magnify' src='${await parse_img(text)}' href='${await parse_img(text)}' alt='Chat Image' style='display: none'/>
+                <video width=100% class='magnify' autoplay muted loop src='${await parse_img(text)}' href='${await parse_img(text)}' alt='Chat Video' style='display: none'/>
             `; // `href` is not valid on `img` tags, but magnific uses it so make sure it's there
         } else {
             data.text = `<div class="custom-gamelog-message">${text}</div>`

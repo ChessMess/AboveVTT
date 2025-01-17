@@ -2,25 +2,6 @@
 
 //#region helper functions
 
-/** The string "THE DM" has been used in a lot of places.
- * This prevents typos or case sensitivity in strings.
- * @return {String} "THE DM" */
-const dm_id = "THE DM";
-
-/** @return {string} The id of the player as a string, {@link dm_id} for the dm */
-function my_player_id() {
-  if (window.DM) {
-    return dm_id;
-  } else {
-    return `${window.PLAYER_ID}`;
-  }
-}
-
-/** @return {object} The window.pcs object that matches the playerId */
-function find_pc_by_player_id(playerId) {
-  return window.pcs.find(pc => playerId === dm_id ? pc.sheet === '' : pc.sheet.includes(playerId));
-}
-
 /** a convenience function that stores peer preferences and creates window.PEER_PREFERENCES if it doesn't already exist
  * @param {object} preferences a {@link PeerEvent.preferencesChange} event */
 function store_peer_preferences(preferences) {
@@ -28,6 +9,19 @@ function store_peer_preferences(preferences) {
     window.PEER_PREFERENCES = {};
   }
   window.PEER_PREFERENCES[preferences.playerId] = preferences;
+}
+
+/** Logs that are super noisy should be sent through here.
+ * This allows us to enable these logs on the fly when we need to debug things that would otherwise flood the console */
+function noisy_log(...message) {
+  if (window.enableNoisyLogs === true) {
+    console.debug(...message);
+  }
+}
+
+function is_peer_connected(playerId) {
+  if (!playerId) return false;
+  return !!window.PeerManager?.connectedPlayerIds?.includes(playerId.toString());
 }
 
 //#endregion helper functions
@@ -39,10 +33,8 @@ function store_peer_preferences(preferences) {
 class PeerEventType {
   static hello = "hello";
   static goodbye = "goodbye";
-  static playerData = "playerData";
   static cursor = "cursor";
   static preferencesChange = "preferencesChange"; // we send the current color in cursor events, but we don't want to add extra processing of those events because they're very numerous
-  static ruler = "ruler";
 }
 
 /** Documented constructors for objects that get sent through PeerManager */
@@ -71,16 +63,6 @@ class PeerEvent {
     };
   }
 
-  /** A message that shares player data with all peers. This data is used to populate the players panel
-   * This message is sent from the DM to all players any time window.PLAYER_STATS is updated
-   * @param {object} playerData the data or that player see window.PLAYER_STATS for more details on the structure */
-  static playerData(playerData) {
-    return {
-      message: PeerEventType.playerData,
-      playerData: playerData
-    };
-  }
-
   /** A message that shares our cursor position with all other peers that is sent from {@link sendCursorPositionToPeers}
    * When this message is received, we update the location of that players cursor on our screen from {@link update_peer_cursor}
    * This is enabled/disabled using {@link start_sending_cursor_to_peers} and {@link stop_sending_cursor_to_peers}
@@ -88,36 +70,21 @@ class PeerEvent {
    * This event includes color data which is only used to update the cursor element.
    * We neither use this color for anything, nor pull this data from anywhere because we want to limit the amount of processing this event causes.
    * This event is very chatty so we want to keep processing of this event to a minimum.
-   * @param mouseX the x coordinate of the cursor position
-   * @param mouseY the y coordinate of the cursor position */
-  static cursor(mouseX, mouseY) {
+   * @param {number} mouseX the x coordinate of the cursor position
+   * @param {number} mouseY the y coordinate of the cursor position
+   * @param {string|undefined} draggedTokenId the id of the token object being dragged; undefined if not being dragged
+   * @param {boolean|undefined} includeRuler true if we should send WaypointManager.coords along with the event */
+  static cursor(mouseX, mouseY, draggedTokenId, includeRuler) {
     return {
       message: PeerEventType.cursor,
       playerId: my_player_id(),
       x: mouseX,
       y: mouseY,
       color: window.color,
-      sceneId: window.CURRENT_SCENE_DATA ? window.CURRENT_SCENE_DATA.id : ""
-    }
-  }
-
-  /** A message that shares our ruler coordinates with all other peers that is sent from {@link send_ruler_to_peers}
-   * When this message is received, we draw that player's ruler on our screen from {@link update_peer_ruler}
-   * This is enabled/disabled using {@link start_sending_cursor_to_peers} and {@link stop_sending_cursor_to_peers}
-   * Users can enable/disable this from the settings sidebar panel
-   * This event includes color data which is only used to update the ruler element.
-   * We neither use this color for anything, nor pull this data from anywhere because we want to limit the amount of processing this event causes.
-   * This event is very chatty so we want to keep processing of this event to a minimum. */
-  static ruler() {
-    return {
-      message: PeerEventType.ruler,
-      playerId: my_player_id(),
-      numWaypoints: WaypointManager.numWaypoints,
-      coords: WaypointManager.coords,
-      mouseDownCoords: WaypointManager.mouseDownCoords,
-      color: window.color,
-      sceneId: window.CURRENT_SCENE_DATA ? window.CURRENT_SCENE_DATA.id : ""
-    }
+      sceneId: window.CURRENT_SCENE_DATA ? window.CURRENT_SCENE_DATA.id : "",
+      coords: includeRuler === true ? WaypointManager.coords : [],
+      tokenId: typeof draggedTokenId === "string" ? draggedTokenId : ""
+    };
   }
 
   /** A message that tells other peers that we've changed preferences.
@@ -145,18 +112,16 @@ class PeerEvent {
 /** Every time PeerManager receives an event on a connection, it sends it here to be handled. Nothing else should call this function */
 function handle_peer_event(eventData) {
   try {
-    // console.debug("handle_peer_event", eventData);
+    noisy_log("handle_peer_event", eventData);
     switch (eventData.message) {
-      case PeerEventType.cursor:            update_peer_cursor(eventData); break;
+      case PeerEventType.cursor:            handle_peer_cursor_event(eventData); break;
       case PeerEventType.goodbye:           peer_said_goodbye(eventData); break;
       case PeerEventType.hello:             peer_said_hello(eventData); break;
-      case PeerEventType.playerData:        update_player_data_from_peer(eventData.playerData); break;
       case PeerEventType.preferencesChange: peer_changed_preferences(eventData); break;
-      case PeerEventType.ruler:             update_peer_ruler(eventData); break;
       default: console.debug("handle_peer_event is ignoring event", eventData); // using console.debug because we don't want to spam the console with warning or errors.
     }
   } catch (error) {
-    // using console.debug because we don't want to spam the console with warning or errors
+    // using console.debug because we don't want to spam the console with warnings or errors
     console.debug("handle_peer_event failed to handle event", eventData, error);
   }
 }
@@ -165,6 +130,18 @@ function handle_peer_event(eventData) {
 
 //#region PeerManager connect/disconnect logic
 
+function configure_peer_manager_from_settings() {
+  console.log("configure_peer_manager_from_settings")
+  // configure the cursor/ruler settings first
+  const cursorSettings = get_avtt_setting_value("receiveCursorFromPeers");
+  local_peer_setting_changed("receiveCursorFromPeers", cursorSettings)
+  const rulerSettings = get_avtt_setting_value("receiveRulerFromPeers");
+  local_peer_setting_changed("receiveRulerFromPeers", rulerSettings)
+  // then enable or disable the PeerManager
+  const enabled = get_avtt_setting_value("peerStreaming");
+  local_peer_setting_changed("peerStreaming", enabled);
+}
+
 function local_peer_setting_changed(settingName, newValue) {
   switch (settingName) {
     case "peerStreaming":
@@ -172,15 +149,17 @@ function local_peer_setting_changed(settingName, newValue) {
         enable_peer_manager();
       } else {
         disable_peer_manager();
+        return; // don't send our preferences. We're done.
       }
       break;
-    case "receiveCursorFromPeers": // explicitly letting this fall through
+    case "receiveCursorFromPeers":
+      window.receiveCursorFromPeers = newValue; // faster access to our own settings
+      break;
     case "receiveRulerFromPeers":
-      let eventData = PeerEvent.preferencesChange();
-      store_peer_preferences(eventData); // faster access to our own preferences instead of reading from localStorage every time
-      window.PeerManager.send(eventData);
+      window.receiveRulerFromPeers = newValue; // faster access to our own settings
       break;
   }
+  window.PeerManager.send(PeerEvent.preferencesChange());
 }
 
 /** show/hide settings UI based as needed
@@ -189,11 +168,11 @@ function toggle_peer_settings_visibility(peerStreamingValue) {
   if (peerStreamingValue) {
     $(`.token-image-modal-footer-select-wrapper[data-option-name="receiveCursorFromPeers"]`).show();
     $(`.token-image-modal-footer-select-wrapper[data-option-name="receiveRulerFromPeers"]`).show();
-    $("#cursor_ruler_toggle").css("visibility", "visible");
+    $("#cursor_ruler_toggle").css("display", "block");
   } else {
     $(`.token-image-modal-footer-select-wrapper[data-option-name="receiveCursorFromPeers"]`).hide();
     $(`.token-image-modal-footer-select-wrapper[data-option-name="receiveRulerFromPeers"]`).hide();
-    $("#cursor_ruler_toggle").css("visibility", "collapse");
+    $("#cursor_ruler_toggle").css("display", "none");
   }
 }
 
@@ -206,7 +185,7 @@ function enable_peer_manager() {
     } else {
       window.peerTimeout += 1; // wait a little longer each time so we don't just hammer it
     }
-    console.warn(`enable_peer_manager no peer id yet. Trying again in ${window.peerTimeout} seconds`);
+    console.log(`enable_peer_manager no peer id yet. Trying again in ${window.peerTimeout} seconds`);
     setTimeout(function() {
       enable_peer_manager()
     }, window.peerTimeout * 1000);
@@ -214,7 +193,7 @@ function enable_peer_manager() {
   }
   delete window.peerTimeout; // we're ready to go. We no longer need this hanging around;
 
-  console.debug("enable_peer_manager starting");
+  console.log("enable_peer_manager starting");
 
   window.PeerManager.enabled = true;
   window.PeerManager.readyToConnect();
@@ -224,6 +203,12 @@ function enable_peer_manager() {
 
     // update our online indicator
     update_player_online_indicator(my_player_id(), true, window.color);
+
+    // make sure we're ready to handle other peer cursors and rulers
+    init_peer_fade_functions();
+    window.PEER_TOKEN_DRAGGING = {};
+    window.receiveCursorFromPeers = get_avtt_setting_value("receiveCursorFromPeers");
+    window.receiveRulerFromPeers = get_avtt_setting_value("receiveRulerFromPeers");
 
     // start observing out cursor position and send it to all connected peers
     start_sending_cursor_to_peers();
@@ -235,7 +220,7 @@ function enable_peer_manager() {
 
 /** Disconnects all connections, and disables the PeerManager */
 function disable_peer_manager() {
-  console.debug("disable_peer_manager");
+  console.log("disable_peer_manager");
   try {
     // Any game logic that needs to be cleaned up before disconnecting should go in this try/catch. It may be overkill, but we definitely want the disconnect logic to execute no matter what happens here.
 
@@ -251,11 +236,23 @@ function disable_peer_manager() {
   window.PeerManager.enabled = false;
 }
 
+/** when we receive catastrophic errors, we need to tear down and rebuild PeerManager */
+function rebuild_peerManager() {
+  console.warn("rebuild_peerManager is being ignored");
+  return;
+  console.log("rebuild_peerManager starting");
+  disable_peer_manager();
+  window.PeerManager.tearDown();
+  window.PeerManager = new PeerManager();
+  enable_peer_manager();
+  console.log("rebuild_peerManager finished");
+}
+
 /** Called when a new connection is opened
  * @param {string} peerId the id of the peerjs peer that we connected to
  * @param {string} playerId the id of the DDB player that we connected to */
 function peer_connected(peerId, playerId) {
-  console.debug("peer_connected", peerId, playerId);
+  console.log("peer_connected", peerId, playerId);
   try {
     // We just connected to this peer. Let's send them any data that they need right away
 
@@ -265,15 +262,10 @@ function peer_connected(peerId, playerId) {
     // let them know our preferences
     window.PeerManager.sendToPeer(peerId, PeerEvent.preferencesChange());
 
-    // send them any player data that we have
-    if (window.DM) {
-      for (const id in window.PLAYER_STATS) {
-        send_player_data_to(peerId, window.PLAYER_STATS[id]);
-      }
-    }
+    init_peer_fade_function(playerId);
 
   } catch (error) {
-    console.debug("peer_connected caught an error", error);
+    console.warn("peer_connected caught an error", error);
   }
 }
 
@@ -281,18 +273,24 @@ function peer_connected(peerId, playerId) {
  * @param {string} peerId the id of the peerjs peer that we disconnected from
  * @param {string} playerId the id of the DDB player that we disconnected from */
 function peer_disconnected(peerId, playerId) {
-  console.debug("peer_disconnected", peerId, playerId);
+  console.log("peer_disconnected", peerId, playerId);
   try {
     // update online indicator
     update_player_online_indicator(playerId, false, "gray");
   } catch (error) {
-    console.debug("peer_disconnected caught an error", error);
+    console.warn("peer_disconnected caught an error", error);
   }
 }
 
 //#endregion PeerManager connect/disconnect logic
 
 //#region game logic
+
+let peer_animation_timout = 20;
+
+/** Set this to true to avoid sending cursor events and ruler events at the same time
+ * Don't forget to unpause it */
+let pauseCursorEventListener = false;
 
 /** used by {@link start_sending_cursor_to_peers} to avoid doubling up on even listeners */
 let isTrackingCursor = false;
@@ -304,13 +302,13 @@ function start_sending_cursor_to_peers() {
   }
   isTrackingCursor = true;
   window.PeerManager.send(PeerEvent.preferencesChange()) // this includes isTrackingCursor
-  console.debug("start_sending_cursor_to_peers");
+  console.log("start_sending_cursor_to_peers");
   addEventListener('mousemove', sendCursorPositionToPeers);
 }
 
 /** removes the event listener that calls {@link sendCursorPositionToPeers} */
 function stop_sending_cursor_to_peers() {
-  console.debug("stop_sending_cursor_to_peers");
+  console.log("stop_sending_cursor_to_peers");
   removeEventListener('mousemove', sendCursorPositionToPeers);
   isTrackingCursor = false;
   window.PeerManager.send(PeerEvent.preferencesChange())
@@ -351,7 +349,7 @@ function peer_changed_preferences(eventData) {
       }
       break;
     case "combatTurn":
-      // TODO: check current combat tracker, and call combat_tracker_updated
+      // do we need to check current combat tracker, and call combat_tracker_updated?
       break;
   }
   switch (eventData.receiveRulerFromPeers) {
@@ -369,17 +367,16 @@ function peer_changed_preferences(eventData) {
       }
       break;
     case "combatTurn":
-      // TODO: check current combat tracker, and call combat_tracker_updated
+      // do we need to check current combat tracker, and call combat_tracker_updated?
       break;
   }
 
-  const pc = find_pc_by_player_id(eventData.playerId);
-  if (!pc){
-    console.debug("peer_changed_preferences no pc", eventData);
-    return;
+  let ruler = get_peer_waypoint_manager(eventData.playerId);
+  if (ruler) {
+    ruler.drawStyle.color = eventData.color;
   }
-  pc.color = eventData.color;
-  update_player_online_indicator(eventData.playerId, pc.p2pConnected, eventData.color);
+
+  update_player_online_indicator(eventData.playerId, true, eventData.color);
 }
 
 /** updates the online indicator in the tokens panel, and call {@link update_old_player_card} to update the online indicator in the players panel if necessary
@@ -388,11 +385,9 @@ function peer_changed_preferences(eventData) {
  * @param {string} peerColor a valid CSS color string that represents the player, defaults to gray which indicates offline */
 function update_player_online_indicator(playerId, isConnected, peerColor) {
   const color = peerColor ? peerColor : "gray";
-  const pc = find_pc_by_player_id(playerId);
+  const pc = find_pc_by_player_id(playerId, false);
   console.debug("update_player_online_indicator", playerId, isConnected, color, pc);
   if (pc) {
-    pc.p2pConnected = isConnected;
-    pc.color = color;
     if (window.DM) {
       const playerListItem = window.tokenListItems.find(li => li.type === ItemType.PC && li.id === pc.sheet);
       const rowHtml = find_html_row(playerListItem, tokensPanel.body);
@@ -410,7 +405,7 @@ function update_player_online_indicator(playerId, isConnected, peerColor) {
   } else if (playerId.toUpperCase() === dm_id) {
     update_old_player_card(playerId, isConnected, color);
   }
-  flash_tokens_tab(color);
+  // flash_tokens_tab(color);
 }
 
 /** updates the online indicator in the old players panel
@@ -439,78 +434,215 @@ function update_old_player_card(playerId, isConnected, peerColor) {
         } else {
           $(this).removeClass("peerConnected")
         }
+        $(this).find(".player-token > img").css("border", `3px solid ${color}`);
       }
     }
   });
 }
 
+/** Sets up the peer fade functions. See {@link init_peer_fade_function} */
+function init_peer_fade_functions() {
+  if (!window.PEER_FADE_CURSOR_FUNCTIONS) {
+    window.PEER_FADE_CURSOR_FUNCTIONS = {};
+  }
+  if (!window.PEER_FADE_RULER_FUNCTIONS) {
+    window.PEER_FADE_RULER_FUNCTIONS = {};
+  }
+  if (window.pcs) {
+    window.pcs.forEach(pc => {
+      if (pc.characterId) {
+        init_peer_fade_function(pc.characterId.toString())
+      }
+    });
+  }
+}
+
+/** Creates and stores a debounce function for fading cursor and ruler streams for the playerId.
+ * We hold a separate function for each peer to ensure that every peer cursor/ruler fades out.
+ * With a single function, only the last playerId would get cleared which leaves other peer cursors and rulers on screen.
+ * An alternative could be to track timestamps from every peer event, and then fade them out within a setInterval function.
+ * The reason I went with separate debounce functions, is because setTimeout is significantly more efficient than date parsing.
+ * So while this sets a few different setTimeout functions, it's still more efficient than setting Date.now() for every event.
+ * @param {string} playerId the playerId that may stream their cursor or ruler */
+function init_peer_fade_function(playerId) {
+  if (typeof playerId !== "string" || playerId.length === 0) return;
+  if (!window.PEER_FADE_CURSOR_FUNCTIONS[playerId]) {
+    window.PEER_FADE_CURSOR_FUNCTIONS[playerId] = mydebounce(() => {
+      noisy_log("executing PEER_FADE_CURSOR_FUNCTIONS", playerId);
+      if (playerId === dm_id) {
+        $(`#cursorPosition-DM`).fadeOut();
+      } else {
+        $(`#cursorPosition-${playerId}`).fadeOut();
+      }
+    });
+  }
+  if (!window.PEER_FADE_RULER_FUNCTIONS[playerId]) {
+    window.PEER_FADE_RULER_FUNCTIONS[playerId] = mydebounce(() => {
+      noisy_log("executing PEER_FADE_RULER_FUNCTIONS", playerId);
+      const waypointManager = get_peer_waypoint_manager(playerId, undefined);
+      waypointManager.clearWaypoints();
+      redraw_peer_rulers(playerId);
+      if (window.PEER_TOKEN_DRAGGING[playerId]) {
+        const html = window.PEER_TOKEN_DRAGGING[playerId];
+        delete window.PEER_TOKEN_DRAGGING[playerId];
+        html.fadeOut(400, function() {
+          html.remove();
+        });
+      }
+    });
+  }
+}
+
 /** a debounced function that will send {@link PeerEvent.cursor} event to all peers */
-const sendCursorPositionToPeers = mydebounce( (mouseMoveEvent) => {
+const sendRulerPositionToPeers = throttle( () => {
+  noisy_log("sendRulerPositionToPeers");
+  window.PeerManager.send(PeerEvent.cursor(undefined, undefined, undefined, true));
+}, peer_animation_timout);
+
+/** a debounced function that will send {@link PeerEvent.cursor} event to all peers */
+const sendTokenPositionToPeers = throttle( (tokenX, tokenY, tokenId, includeRuler) => {
+  noisy_log("sendTokenPositionToPeers", tokenX, tokenY, tokenId, includeRuler);
+  window.PeerManager.send(PeerEvent.cursor(tokenX, tokenY, tokenId, includeRuler));
+}, peer_animation_timout);
+
+/** a debounced function that will send {@link PeerEvent.cursor} event to all peers */
+const sendCursorPositionToPeers = throttle( (mouseMoveEvent) => {
   try {
+    if (pauseCursorEventListener) return;
     if (is_player_sheet_open()) {
-      // console.debug("sendCursorPositionToPeers is_player_sheet_open");
+      noisy_log("sendCursorPositionToPeers is_player_sheet_open");
       return;  // ideally, we would add the event listener to the map only, but I couldn't find a clean way to do that without restructuring things
     }
 
-    const [mouseX, mouseY] = get_event_cursor_position(mouseMoveEvent);
-    // console.debug("sendCursorPositionToPeers", mouseX, mouseY);
-    window.PeerManager.send(PeerEvent.cursor(mouseX, mouseY));
+    const [mouseX, mouseY] = get_event_cursor_position(mouseMoveEvent, true);
+    noisy_log("sendCursorPositionToPeers", mouseX, mouseY);
+    window.PeerManager.send(PeerEvent.cursor(mouseX, mouseY, undefined, false));
   } catch (error) {
     console.log("Failed to sendCursorPositionToPeers", error);
   }
-}, 0);
+}, peer_animation_timout);
 
 /** called when we receive a {@link PeerEvent.cursor} event */
-function update_peer_cursor(eventData) {
-  // console.debug("update_peer_cursor", eventData);
-  // TODO: check receiveCursorFromPeers
-  if (window.CURRENT_SCENE_DATA && window.CURRENT_SCENE_DATA.id !== eventData.sceneId) return; // they're on a different scene
-  const playerId = eventData.playerId === dm_id ? "DM" : eventData.playerId; // dm_id has whitespace in it which messes with html selectors
+function handle_peer_cursor_event(eventData) {
+  try {
+    if (window.CURRENT_SCENE_DATA && window.CURRENT_SCENE_DATA.id !== eventData.sceneId) return; // they're on a different scene so don't show their cursor
 
+    // if they're drawing a ruler, don't bother drawing the cursor. For these cases, we return;
+    // if we don't draw the ruler, see if we want to draw the cursor. For these cases, we break;
+    if (eventData.coords && eventData.coords.length > 0) {
+      switch (window.receiveRulerFromPeers) {
+        case "none":
+          break; // not allowing rulers. check if we allow cursors below
+        case "all":
+          update_peer_ruler(eventData);
+          return; // we're handling the ruler data. No need to check cursors below
+        case "dm":
+          if (eventData.playerId === dm_id) {
+            update_peer_ruler(eventData);
+            return; // we're handling the ruler data. No need to check cursors below
+          }
+          break; // we only want dm rulers. check if we allow cursors below
+        case "combatTurn":
+          if (eventData.playerId === dm_id) { // we always allow dm
+            update_peer_ruler(eventData);
+            return; // we're handling the ruler data. No need to check cursors below
+          }
+          const currentTurn = ct_current_turn();
+          if (!currentTurn) break; // combat is not active, and this player only wants to see the ruler of the current turn
+          if (!currentTurn.includes(eventData.playerId)) break; // combat is active, but this ruler does not match the current turn
+          update_peer_ruler(eventData);
+          return; // we're handling the ruler data. No need to check cursors below
+      }
+    }
+
+    // if we handle the cursor, return;
+    switch (window.receiveCursorFromPeers) {
+      case "none":
+        break; // not allowing cursors
+      case "all":
+        update_peer_cursor(eventData);
+        return; // we're handling the cursor data
+      case "dm":
+        if (eventData.playerId === dm_id) {
+          update_peer_cursor(eventData);
+          return; // we're handling the cursor data
+        }
+        break; // we only want dm cursors
+      case "combatTurn":
+        if (eventData.playerId === dm_id) { // we always allow dm
+          update_peer_cursor(eventData);
+          return; // we're handling the cursor data
+        }
+        const currentTurn = ct_current_turn();
+        if (!currentTurn) break; // combat is not active, and this player only wants to see the cursor of the current turn
+        if (!currentTurn.includes(eventData.playerId)) break; // combat is active, but this cursor does not match the current turn
+        update_peer_cursor(eventData);
+        return; // we're handling the ruler data. No need to check cursors below
+    }
+  } catch (error) {
+    noisy_log("handle_peer_cursor_event", eventData, error);
+  }
+}
+
+/** update the cursor position that matches the {@link PeerEvent.cursor} event
+ * this should only be called from {@link handle_peer_cursor_event} */
+function update_peer_cursor(eventData) {
+  fade_peer_cursor(eventData.playerId);
+
+  if (typeof eventData.tokenId === "string" && eventData.tokenId.length > 0) {
+    peer_is_dragging_token(eventData); // they allow rulers to be drawn so also show the token being dragged if applicable
+    return;
+  }
+
+  // we're not checking receiveCursorFromPeers === "none" because we did that in handle_peer_cursor_event
+  if (window.receiveCursorFromPeers === "combatTurn" && eventData.playerId !== dm_id) { // we always allow the DM
+    const currentTurn = ct_current_turn();
+    if (!currentTurn) return; // combat is not active, and this player only wants to see the cursor of the current turn
+    if (!currentTurn.includes(eventData.playerId)) return; // combat is active, but this cursor does not match the current turn
+  }
+
+  noisy_log("update_peer_cursor", eventData);
+
+  const playerId = eventData.playerId === dm_id ? "DM" : eventData.playerId; // dm_id has whitespace in it which messes with html selectors
   let cursorPosition = $(`#cursorPosition-${playerId}`);
   if (cursorPosition.length === 0) {
     cursorPosition = $(`<div class="peerCursorPosition" id="cursorPosition-${playerId}"></div>`);
     $("#VTT").append(cursorPosition);
     cursorPosition.css("transform", "scale(" + 1/window.ZOOM + ")");
   }
-  cursorPosition.css({
+  cursorPosition.css('background', eventData.color);
+  cursorPosition.stop();
+  cursorPosition.animate({
     top: eventData.y,
-    left: eventData.x,
-    background: eventData.color
-  });
+    left: eventData.x
+  }, peer_animation_timout, "linear");
   cursorPosition.fadeIn();
-  fadeCursor(playerId);
 }
 
-/** a debounced function that will fade out the player's cursor if we haven't received a {@link PeerEvent.cursor} event in over a second */
-const fadeCursor = mydebounce( (playerId) => {
-  $(`#cursorPosition-${playerId}`).fadeOut();
-}, 1000);
-
-/** Sends a {@link PeerEvent.playerData} event to a specific peer
- * @param {string} peerId the id of the peerjs peer to send to
- * @param {object} playerData the player data to send */
-function send_player_data_to(peerId, playerData) {
-  if (typeof playerData === "object") {
-    window.PeerManager.send(PeerEvent.playerData(playerData));
+/** Calls the fade cursor debounce function for the playerId. See {@link init_peer_fade_function}
+ * @param {string} playerId the playerId that is streaming their cursor */
+function fade_peer_cursor(playerId) {
+  try {
+    // this function gets called a lot so don't bother checking if the function exists. It should.
+    // If it doesn't for some reason, we'll set it up in the catch, and then this will do the right thing next time around
+    window.PEER_FADE_CURSOR_FUNCTIONS[playerId]();
+  } catch (error) {
+    console.debug("fade_peer_cursor is missing a fade function", playerId, typeof playerId, error);
+    init_peer_fade_function(playerId);
   }
 }
 
-/** Sends a {@link PeerEvent.playerData} event to all connected peers
- * @param {object} playerData the player data to send */
-function send_player_data_to_all_peers(playerData) {
-  if (typeof playerData === "object") {
-    window.PeerManager.send(PeerEvent.playerData(playerData));
+/** Calls the fade ruler debounce function for the playerId. See {@link init_peer_fade_function}
+ * @param {string} playerId the playerId that is streaming their ruler */
+function fade_peer_ruler(playerId) {
+  try {
+    // this function gets called a lot so don't bother checking if the function exists. It should.
+    // If it doesn't for some reason, we'll set it up in the catch, and then this will do the right thing next time around
+    window.PEER_FADE_RULER_FUNCTIONS[playerId]();
+  } catch (error) {
+    console.debug("fade_peer_ruler is missing a fade function", playerId, typeof playerId, error);
+    init_peer_fade_function(playerId);
   }
-}
-
-/** called when we receive a {@link PeerEvent.playerData} event */
-function update_player_data_from_peer(playerData) {
-  if (!window.PLAYER_STATS) {
-    window.PLAYER_STATS = {};
-  }
-  window.PLAYER_STATS[playerData.id] = playerData;
-  refreshTokensSidebarList();
 }
 
 /** a debounced function that updates the tokens panel.
@@ -521,49 +653,66 @@ const refreshTokensSidebarList = mydebounce( () => { // we want to debounce this
   redraw_token_list();
 }, 2000);
 
-/** a debounced function that will send {@link PeerEvent.ruler} event to all peers */
-const send_ruler_to_peers = mydebounce( () => {
-  if (!isTrackingCursor) return;
-  // console.debug("send_ruler_to_peers");
-  window.PeerManager.send(PeerEvent.ruler());
-}, 0);
-
-/** called when we receive a {@link PeerEvent.ruler} event */
+/** called when we receive a {@link PeerEvent.cursor} event
+* this should only be called from {@link handle_peer_cursor_event} */
 function update_peer_ruler(eventData) {
-  // console.debug("update_peer_ruler", eventData)
-  if (!isTrackingCursor) return;
+  peer_is_dragging_token(eventData); // they allow rulers to be drawn so also show the token being dragged if applicable
+
+  // we're not checking receiveRulerFromPeers because we did that in handle_peer_cursor_event
+
+  noisy_log("update_peer_ruler", eventData)
+  fade_peer_ruler(eventData.playerId);
   if (window.CURRENT_SCENE_DATA && window.CURRENT_SCENE_DATA.id !== eventData.sceneId) return; // they're on a different scene
   const waypointManager = get_peer_waypoint_manager(eventData.playerId, eventData.color);
-  clear_peer_canvas()
+  clear_peer_canvas(eventData.playerId)
   waypointManager.clearWaypoints()
   waypointManager.numWaypoints = eventData.numWaypoints;
   waypointManager.coords = eventData.coords;
-  waypointManager.mouseDownCoords = eventData.mouseDownCoords;
-  redraw_peer_rulers();
-  removeRuler(eventData.playerId);
+  redraw_peer_rulers(eventData.playerId);
 }
 
-/** a debounced function that will fade out the player's cursor if we haven't received a {@link PeerEvent.cursor} event in over a second */
-const removeRuler = mydebounce( (playerId) => {
-  const waypointManager = get_peer_waypoint_manager(playerId);
-  waypointManager.clearWaypoints();
-  redraw_peer_rulers();
-}, 1000);
+/** adds or updates the location of a mock token to show where a player is actively dragging it
+ * this should only be called from {@link handle_peer_cursor_event} */
+function peer_is_dragging_token(eventData) {
+  if (typeof eventData.tokenId !== "string" || eventData.tokenId.length === 0) return;
+  let html = window.PEER_TOKEN_DRAGGING[eventData.playerId];
+  if (!html || html.length === 0) {
+    noisy_log("peer_is_dragging_token no html", eventData);
+    html = $(`#tokens div[data-id='${eventData.tokenId}']`).clone();
+    html.attr("data-clone-id", `dragging-${eventData.tokenId}`);
+    html.attr("data-id", ``);
+    html.removeClass('tokenselected underDarkness');
+    if (!html || html.length === 0) {
+      noisy_log("peer_is_dragging_token no token on scene matching", `#tokens div[data-id='${eventData.tokenId}']`, eventData);
+      return;
+    }
+    window.PEER_TOKEN_DRAGGING[eventData.playerId] = html;
+    $("#tokens").append(html);
+  }
+
+  noisy_log("peer_is_dragging_token updating drag token css", eventData, html);
+  html.css({
+    top: eventData.y,
+    left: eventData.x,
+    opacity: 0.5
+  });
+}
 
 /** clears other player's rulers from our screen */
-function clear_peer_canvas() {
+function clear_peer_canvas(playerId) {
   const canvas = document.getElementById("peer_overlay");
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, canvas.width, canvas.height);
+
+  WaypointManager.clearWaypointDrawings(playerId)
 }
 
 /** iterates over window.PEER_RULERS and draws any rulers that need to be drawn */
-function redraw_peer_rulers() {
-  clear_peer_canvas(); // make sure we clear the canvas first. Otherwise, we'll see every previous position of every ruler
-  for (const playerId in window.PEER_RULERS) {
-    const waypointManager = window.PEER_RULERS[playerId];
-    waypointManager.draw(false);
-  }
+function redraw_peer_rulers(playerId) {
+  //clear_peer_canvas(playerId); // make sure we clear the canvas first. Otherwise, we'll see every previous position of every ruler
+  const waypointManager = window.PEER_RULERS[playerId];
+  waypointManager.draw(undefined, undefined, undefined, playerId);
+  
 }
 
 /** finds or creates a {@link WaypointManagerClass} for the given player
@@ -586,7 +735,7 @@ function get_peer_waypoint_manager(playerId, color) {
   }
   const canvas = document.getElementById("peer_overlay");
   const context = canvas.getContext("2d");
-  context.setLineDash([])
+  context.setLineDash([]);
   context.fillStyle = '#f50';
   waypointManager.setCanvas(canvas);
   return waypointManager;
@@ -597,12 +746,11 @@ function get_peer_waypoint_manager(playerId, color) {
 function update_peer_communication_with_combat_tracker_data(ctItems) {
   try {
     if (!Array.isArray(ctItems)) return;
-    console.debug("update_peer_communication_with_combat_tracker_data", ctItems, typeof ctItems);
+    console.debug("update_peer_communication_with_combat_tracker_data", ctItems);
     let myPlayerId = my_player_id();
     const currentTurn = ctItems.find(item => item.current === true && item.options)?.options?.id;
     const currentTurnId = currentTurn ? getPlayerIDFromSheet(currentTurn) : undefined;
     const isMyTurn = currentTurnId === myPlayerId;
-    // console.debug("peer update_peer_communication_after_combat_tracker_updated", myPlayerId, currentTurn);
     // start/stop sending events to everyone that specified "combatTurn"
     for (let playerId in window.PEER_PREFERENCES) {
       if (playerId === myPlayerId) continue; // we never send events to ourselves so there's no point tracking our own id

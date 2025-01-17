@@ -1,26 +1,23 @@
-function apply_settings_from_storage(){
+function apply_settings_from_storage(applyFromWindow = false){
     const buttonSelectedClasses = "button-enabled ddbc-tab-options__header-heading--is-active"
-    const settings = JSON.parse(localStorage.getItem('textSettings'));
+    const settings = (applyFromWindow) ? window.TEXTDATA : JSON.parse(localStorage.getItem('textSettings'));
     window.TEXTDATA = settings
+    $(`#text_controller_inside button[id^='text_']`).removeClass(buttonSelectedClasses);
+    $(`#text_font option`).removeAttr('selected');
     $(`#text_font option[value="${settings.text_font}"]`).attr("selected", "selected");
     $("#text_size").val(settings.text_size)
     $("#text_color").val(settings.text_color)
     $("#text_color").next().find(".sp-preview-inner").css("background-color", settings.text_color)
-    if (settings.text_bold){
-        $("#text_bold").addClass(buttonSelectedClasses)
-    } 
-    if (settings.text_italic){
-        $("#text_italic").addClass(buttonSelectedClasses)
-    } 
-    if (settings.text_underline){
-        $("#text_underline").addClass(buttonSelectedClasses)
-    } 
+    $("#text_bold").toggleClass(buttonSelectedClasses, settings.text_bold)
+    $("#text_italic").toggleClass(buttonSelectedClasses, settings.text_italic)
+    $("#text_underline").toggleClass(buttonSelectedClasses, settings.text_underline)
     $(`#text_${settings.text_alignment}`).addClass(buttonSelectedClasses)
     $("#stroke_size").val(settings.stroke_size)
     $("#stroke_color").val(settings.stroke_color),
     $("#stroke_color").next().find(".sp-preview-inner").css("background-color", settings.stroke_color)
     $("#text_background_color").val(settings.text_background_color)
     $("#text_background_color").next().find(".sp-preview-inner").css("background-color", settings.text_background_color)
+    $('#hide_text').toggleClass(buttonSelectedClasses, settings.text_hide == true)
     if (settings.text_shadow){
         $("#text_shadow").addClass(buttonSelectedClasses)
     } 
@@ -55,18 +52,31 @@ function apply_settings_to_boxes(){
         "line-height": `calc(${window.TEXTDATA.text_size}px * var(--window-zoom))`,
         "font-weight": window.TEXTDATA.text_bold ? "bold" : "normal",
         "font-style": window.TEXTDATA.text_italic ? "italic" : "normal",
-        "text-decoration": window.TEXTDATA.text_underline ? "underline" : "none",
+        "text-decoration": window.TEXTDATA.text_underline ? `underline ${window.TEXTDATA.text_color}` : "none",
         "-webkit-text-stroke-color": window.TEXTDATA.stroke_color,
         "-webkit-text-stroke-width": `calc(${window.TEXTDATA.stroke_size}px * var(--window-zoom))`,
-        "text-shadow": window.TEXTDATA.text_shadow ? "black 5px 5px 5px" : "none"
+        "text-shadow": window.TEXTDATA.text_shadow ? "black 5px 5px 5px" : "none",
+        "padding": '0px'
+    })
+    $(".drawing-text-box").attr('data-text-size', window.TEXTDATA.text_size);
+    $(".drawing-text-box").attr('data-stroke-size', window.TEXTDATA.stroke_size);
+    $(".text-input-inside").css({
+        "--text-align": window.TEXTDATA.text_alignment,
+        "--color": window.TEXTDATA.text_color, 
+        "--text-decoration-color": window.TEXTDATA.text_color,
+        "--font-family": window.TEXTDATA.text_font,
+        "--font-size": `calc(${window.TEXTDATA.text_size}px * var(--window-zoom))`,
+        "--line-height": `calc(${window.TEXTDATA.text_size}px * var(--window-zoom))`,
+        "--font-weight": window.TEXTDATA.text_bold ? "bold" : "normal",
+        "--font-style": window.TEXTDATA.text_italic ? "italic" : "normal"
     })
     
 }
 
-function create_text_controller() {
+function create_text_controller(applyFromWindow = false) {
     if ($("#text_controller_inside").length > 0) {
         $("#text_controller_inside").show()
-        apply_settings_from_storage()
+        apply_settings_from_storage(applyFromWindow)
         return
     }
     const textControllerInside = $("<div id='text_controller_inside'/>");
@@ -127,7 +137,7 @@ function create_text_controller() {
         `<div class='ddbc-tab-options--layout-pill'>
             <select id='text_font' data-required="text_font" name='font' style='text-align:center'>
                 ${availableFonts.map((font) => {
-            return `<option  style='font-family:"${font}";' value="${font}">${font}</option>`;
+            return `<option  style='font-family:${font};' value="${font}">${font}</option>`;
         })}
             </select>
         </div>
@@ -199,6 +209,15 @@ function create_text_controller() {
         `<div class='ddbc-tab-options--layout-pill'>
             <button id='text_shadow' title="drop shadow" style="height:20px" data-toggle="true" data-key="shadow" data-value="shadow" class='drawbutton text-option ddbc-tab-options__header-heading menu-option'>
                 <span class='material-icons' style='font-size: 12px'>gradient</span>
+            </button>
+        </div>
+    `);
+      flexDiv.append(
+        `<div class='ddbc-tab-options--layout-pill'>
+            <button id='hide_text' title="hide text" style="height:20px" data-toggle="true" data-key="hide" data-value="hide" class='drawbutton text-option ddbc-tab-options__header-heading menu-option'>
+                    <span class="material-icons">
+                        visibility_off
+                    </span>
             </button>
         </div>
     `);
@@ -308,7 +327,7 @@ function create_text_controller() {
         store_text_settings()
     }
     else{
-        apply_settings_from_storage()
+        apply_settings_from_storage(applyFromWindow)
     }
     
     
@@ -321,7 +340,12 @@ function create_text_controller() {
  * @returns a div which has the title bar with submit/close buttons and a text area
  */
 function create_moveable_text_box(x,y,width, height, text = undefined) {
-    const textInputInside = $(`<div class="text-input-inside"/>`);
+    let htmlText;
+    if(typeof text == 'string')
+        htmlText = text.replace(/&/g, "&amp;").replace(/>/g, "&gt;").replace(/</g, "&lt;").replace(/'/g, "&apos;")
+
+
+    const textInputInside = $(`<div class="text-input-inside" data-text='${htmlText ? htmlText : ''}'/>`);
     textInputInside.css({
         "position": "fixed",
         "z-index": 1000,
@@ -393,6 +417,15 @@ function create_moveable_text_box(x,y,width, height, text = undefined) {
         minHeight: 55
     });
 
+    document.querySelectorAll('.menu-button')
+    .forEach(occurence => {
+        let id = occurence.id;
+        if (id && (!id.includes("text") || id === "text_button"))
+        occurence.addEventListener('click', function() {
+            document.getElementById("text_controller_inside")?.remove();
+        }, { once: true});
+      });
+
     $(textInputInside).mousedown(function () {
         frame_z_index_when_click($(this));
     });
@@ -418,6 +451,7 @@ function create_moveable_text_box(x,y,width, height, text = undefined) {
 function handle_auto_resize(e){
     $(this).parent().css("height", this.scrollHeight +25 +2 + "px")
     $(this).parent().css("width", this.scrollWidth + 2 +"px")
+    $(this).closest('.text-input-inside').attr('data-text', this.value)
 }
 
 /**
@@ -461,8 +495,8 @@ function handle_draw_text_submit(event) {
     );
     // textbox doesn't have left or top so use the wrapper
     // with 25 being the bar height
-    const rectX = Math.round(((parseInt($(textBox).parent().css("left"))-200+window.scrollX))) * (1.0 / window.ZOOM);
-    const rectY = Math.round(((parseInt($(textBox).parent().css("top"))-200+window.scrollY)) + 25) * (1.0 / window.ZOOM);
+    const rectX = Math.round(((parseInt($(textBox).parent().css("left"))-window.VTTMargin+window.scrollX))) * (1.0 / window.ZOOM);
+    const rectY = Math.round(((parseInt($(textBox).parent().css("top"))-window.VTTMargin+window.scrollY)) + 25) * (1.0 / window.ZOOM);
     const rectColor = $(textBox).css("background-color")
 
     const text = textBox.val();
@@ -470,8 +504,8 @@ function handle_draw_text_submit(event) {
     let fontStyle = $(textBox).css("font-style") || "normal";
 
     const font = {
-        font: $(textBox).css("font-family"),
-        size: parseInt($(textBox).css("font-size")) / window.ZOOM,
+        font: $(textBox).css("font-family").replaceAll(/['"]+/g, ''),
+        size: parseInt($(".drawing-text-box").attr('data-text-size')),
         weight: fontWeight,
         style: fontStyle,
         underline: $(textBox).css("text-decoration")?.includes("underline"),
@@ -481,15 +515,16 @@ function handle_draw_text_submit(event) {
     };
 
     const stroke = {
-        size: parseInt($(textBox).css("-webkit-text-stroke-width")) / window.ZOOM,
+        size: parseInt($(".drawing-text-box").attr('data-stroke-size')),
         color: $(textBox).css("-webkit-text-stroke-color"),
     };
+    const hidden = $('#text_controller_inside #hide_text.button-enabled').length>0;
     // data should match params in draw_text
     // push the starting position of y south based on the font size
     let textid = uuid();
     data = ["text",
         rectX,
-        rectY + font.size,
+        rectY + Math.ceil(parseFloat($(textBox).css("font-size")) / window.ZOOM),
         width,
         height,
         text,
@@ -497,11 +532,12 @@ function handle_draw_text_submit(event) {
         stroke,
         rectColor,
         textid,
-        window.CURRENT_SCENE_DATA.scale_factor
+        window.CURRENT_SCENE_DATA.scale_factor,
+        hidden
     ];
     // bake this data and redraw all text
     window.DRAWINGS.push(data);
-    $(".text-input-title-bar-exit").click();
+    $(this).parent().find(".text-input-title-bar-exit").click();
     redraw_text();
     sync_drawings();
 
@@ -512,7 +548,13 @@ function handle_draw_text_submit(event) {
  * @param {Event} e 
  */
 function handle_key_press(e) {
-    if (e.key == "Escape") $(this).parent().remove();
+    if (e.key == "Escape") {
+        $(this).parent().remove();
+        document.getElementById("text_controller_inside")?.remove();
+    }
+    else{
+        $(this).closest('.text-input-inside').attr('data-text', this.value)
+    }
 }
 
 /**
@@ -580,24 +622,28 @@ function draw_text(
     stroke,
     rectColor = 'transparent',
     id = '',
-    scale = (window.CURRENT_SCENE_DATA.scale_factor == "") ? 1 : window.CURRENT_SCENE_DATA.scale_factor
+    scale = (window.CURRENT_SCENE_DATA.scale_factor == "") ? 1 : window.CURRENT_SCENE_DATA.scale_factor,
+    hidden = false,
+    wallText = false
 ) {
 
     if($(`svg[id='${id}']`).length>0)
         return;
     if(rectColor == null)
         rectColor = 'transparent';
+    if(!window.DM && hidden)
+        return;
 
     divideScale = (window.CURRENT_SCENE_DATA.scale_factor == "") ? 1 : window.CURRENT_SCENE_DATA.scale_factor;
 
     let adjustScale = (scale/divideScale);   
 
-    font.size = font.size / adjustScale
-    stroke.size = stroke.size / adjustScale
-    width = width / adjustScale 
-    height = height / adjustScale 
-    startingX = startingX / adjustScale 
-    startingY = startingY / adjustScale
+    font.size = Math.ceil(font.size / adjustScale)
+    stroke.size = Math.ceil(stroke.size / adjustScale)
+    width = Math.ceil(width / adjustScale) 
+    height = Math.ceil(height / adjustScale) 
+    startingX = Math.ceil(startingX / adjustScale) 
+    startingY = Math.ceil(startingY / adjustScale)
 
     let shadowStyle ='';
     if (font.shadow && font.shadow !== "none"){
@@ -612,13 +658,16 @@ function draw_text(
 
     let fontSize=font.size; 
     let lineHeight=12;  
-    let textPart=text.split('\n').map(function(returnSplitText,i){ return `<tspan x="${x}" y="${font.size+i*fontSize}">${returnSplitText}</tspan>`}).join('\n');
+
+
+    
+    let hiddenOpacity = (hidden) ? 0.5 : 1;
     let textSVG = $(`
-        <svg id='${id}' width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="left: ${startingX}px; top: ${startingY-font.size}px; position:absolute; z-index: 500">
+        <svg id='${id}' width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="opacity:${hiddenOpacity}; left: ${startingX}px; top: ${startingY-font.size}px; position:absolute; z-index: 500">
             <title>${text}</title>
             <rect x="0" y="0" width="${width}" height="${height}" style="fill:${rectColor}"/>
-            <g style="text-anchor: ${anchor}; font-size:${font.size}px; font-style:${font.style}; font-weight: ${font.weight}; text-decoration: ${underline}; font-family: ${font.font};">
-            <text x="${x}" y="${font.size}" style="fill: ${font.color}; stroke: ${stroke.color}; stroke-width: ${stroke.size}; filter:${shadowStyle};stroke-linecap:butt;stroke-linejoin:round;paint-order:stroke;stroke-opacity:1;">${textPart}</text>
+            <g x="0.5" y="${font.size*-0.14}" style="text-anchor: ${anchor}; font-size:${font.size}px; font-style:${font.style}; font-weight: ${font.weight}; font-family: ${font.font};">
+                <text x="${x}" y="0" style="fill: ${font.color}; stroke: ${stroke.color}; stroke-width: ${stroke.size}; text-decoration: ${underline} ${font.color}; filter:${shadowStyle};stroke-linecap:butt;stroke-linejoin:round;paint-order:stroke;stroke-opacity:1;"></text>
             </g>
          </svg>
     `);
@@ -626,70 +675,123 @@ function draw_text(
  
     $('#text_div').append(textSVG);
 
+    if(wallText == true){
+        let element = $(`svg#${id} text`)[0];
+        const wallHeights = text?.trim()?.split(' \n ')?.reverse();
+        element.innerHTML += wallHeights[0] ? `<tspan x="${x}" y="${font.size+0*font.size}">${wallHeights[0]}</tspan>` : '';
+        element.innerHTML += wallHeights[1] ? `<tspan x="${x}" y="${font.size+1*font.size}">${wallHeights[1]}</tspan>` : '';
+    }
+    else{
+        let words = text.split(/(\s)/g);
 
+        let line = '';
+        let element = $(`svg#${id} text`)[0];
+        element.innerHTML = '<tspan id="PROCESSING"></tspan>';
+        let lineNumber = 0;
+        for (let n = 0; n < words.length; n++) {
+            let testLine = line + words[n] + ' ';
+            let testElem = document.getElementById('PROCESSING');
+            /*  Add line in testElement */
+            testElem.innerHTML = testLine;
+            /* Messure textElement */
+            let metrics = testElem.getBoundingClientRect();
+            testWidth = metrics.width;
+           
+            if(words[n].includes('\n')  && n > 0){
+                let splitNewLines = words[n].split(/(\n)/g);
+                for(let i = 0; i < splitNewLines.length; i++){
+                    if(splitNewLines[i] == '\n'){
+                        element.innerHTML += `<tspan x="${x}" y="${font.size+lineNumber*font.size}">${line}</tspan>`;
+                        lineNumber++;
 
-    textSVG.draggable({
-        containment: '#text_div',
-        start: function () {
-            $("#resizeDragMon").append($('<div class="iframeResizeCover"></div>'));
-            $("#sheet").append($('<div class="iframeResizeCover"></div>'));
-        },
-        drag: function(event,ui)
-        {
-            ui.position.top = Math.round((ui.position.top - 200) / window.ZOOM );
-            ui.position.left = Math.round((ui.position.left - 200) / window.ZOOM );
-
-        },  
-        stop: function (event, ui) {
-            $('.iframeResizeCover').remove();
-            
-            for(drawing in window.DRAWINGS){
-                if(window.DRAWINGS[drawing][9] != id)
-                    continue;
-                window.DRAWINGS[drawing][1] = parseInt($(this).css('left'));
-                window.DRAWINGS[drawing][2] = parseInt($(this).css('top')) + parseInt(font.size);     
+                        line = splitNewLines[i] + ' ';
+                    }
+                }
+              
             }
-                        
-        
-            window.ScenesHandler.persist();
-            if(window.CLOUD)
-                sync_drawings();
-            else
-                window.MB.sendMessage('custom/myVTT/drawing', data);
+            else if (testWidth / window.ZOOM > width && n > 0) {
+                element.innerHTML += `<tspan x="${x}" y="${font.size+lineNumber*font.size}">${line}</tspan>`;
+                lineNumber++
+                line = words[n] + ' ';
+            } else {
+                line = testLine;
+            }
         }
-    });
+        element.innerHTML += `<tspan x="${x}" y="${font.size+lineNumber*font.size}">${line}</tspan>`;
+        document.getElementById("PROCESSING").remove();
+
+        textSVG.draggable({
+            distance: 5,
+            start: function () {
+                $("#resizeDragMon").append($('<div class="iframeResizeCover"></div>'));
+                $("#sheet").append($('<div class="iframeResizeCover"></div>'));
+            },
+            drag: function(event,ui)
+            {
+                ui.position.top = Math.round((ui.position.top - window.VTTMargin) / window.ZOOM );
+                ui.position.left = Math.round((ui.position.left - window.VTTMargin) / window.ZOOM );
+
+            },  
+            stop: function (event, ui) {
+                $('.iframeResizeCover').remove();
+                
+                for(let drawing in window.DRAWINGS){
+                    if(window.DRAWINGS[drawing][9] != id)
+                        continue;
+                    window.DRAWINGS[drawing][1] = parseInt($(this).css('left'))*adjustScale;
+                    window.DRAWINGS[drawing][2] = parseInt($(this).css('top'))*adjustScale + parseInt(font.size)*adjustScale;    
+                }          
+                sync_drawings();
+            }
+        });
 
 
-
-    textSVG.on('dblclick', function(){
-
-        create_text_controller();
-
-        window.TEXTDATA = [];
-        window.TEXTDATA.text_alignment = font.align;
-        window.TEXTDATA.text_color = font.color;
-        window.TEXTDATA.text_background_color = rectColor;
-        window.TEXTDATA.text_font = font.font;
-        window.TEXTDATA.text_size = font.size;
-        window.TEXTDATA.text_bold = (font.style == 'bold') ? true : false;
-        window.TEXTDATA.text_italic = (font.style == 'italic') ? true : false;
-        window.TEXTDATA.text_underline = font.underline;
-        window.TEXTDATA.stroke_color = stroke.color;
-        window.TEXTDATA.stroke_size = stroke.size;
-        window.TEXTDATA.text_shadow = (font.shadow != 'none') ? true : false;
-        apply_settings_to_boxes();
-
-        let bounds = $(this)[0].getBoundingClientRect();
-        create_moveable_text_box(bounds.left, bounds.top-25, bounds.width, bounds.height+25, text)
-        
-       window.DRAWINGS = window.DRAWINGS.filter((d) => d[9] != $(this)[0].id);
-        $(this).remove();
-        window.ScenesHandler.persist();
-        if(window.CLOUD)
+        textSVG.on('contextmenu', function(e){
+            $(this).remove();
+            for(let drawing in window.DRAWINGS){
+                if(window.DRAWINGS[drawing][9] == this.id){
+                    if(!window.DRAWINGS[drawing][11]){
+                        window.DRAWINGS[drawing][11] = true;
+                    }
+                    else{
+                        window.DRAWINGS[drawing][11] = false;
+                    }
+                }
+            }
+            redraw_text();
             sync_drawings();
-        else
-            window.MB.sendMessage('custom/myVTT/drawing', data);
-    });
+            return false;
+        });
+        textSVG.on('dblclick', function(){
+            let text_data = window.DRAWINGS.filter(d => d[9] == this.id)[0];
+            if(window.TEXTDATA == undefined){
+                window.TEXTDATA = {};
+            }
+            let scaleConversion = text_data[10]/window.CURRENT_SCENE_DATA.scale_factor
+            window.TEXTDATA.text_alignment = text_data[6].align;
+            window.TEXTDATA.text_color = text_data[6].color;
+            window.TEXTDATA.text_background_color = text_data[8];
+            window.TEXTDATA.text_font = text_data[6].font;
+            window.TEXTDATA.text_size = text_data[6].size / scaleConversion;
+            window.TEXTDATA.text_bold = (parseInt(text_data[6].weight) == 700) ? true : false;
+            window.TEXTDATA.text_italic = (text_data[6].style == 'italic') ? true : false;
+            window.TEXTDATA.text_underline = text_data[6].underline;
+            window.TEXTDATA.stroke_color = text_data[7].color;
+            window.TEXTDATA.stroke_size = text_data[7].size / scaleConversion;
+            window.TEXTDATA.text_shadow = (text_data[6].shadow != 'none') ? true : false;
+            window.TEXTDATA.text_hide = text_data[11];
+            create_text_controller(true)
+
+            let bounds = $(this)[0].getBoundingClientRect();
+            create_moveable_text_box(bounds.left, bounds.top-25, bounds.width, bounds.height+25, text)
+            apply_settings_to_boxes();
+            store_text_settings();
+            
+           window.DRAWINGS = window.DRAWINGS.filter((d) => d[9] != $(this)[0].id);
+            $(this).remove();
+            sync_drawings();
+        });
+    }
 }
 
 
@@ -700,7 +802,6 @@ function draw_text(
  * @param {$} buttons the buttons in which this text button is appended to
  */
 function init_text_button(buttons) {
-    
     textButton = $(
         "<button style='display:inline;width:75px' id='text_button' class='drawbutton menu-button hideable ddbc-tab-options__header-heading'><u>T</u>ext</button>"
     );
@@ -756,7 +857,8 @@ function init_text_button(buttons) {
             );
             $("#text_div svg").empty();
             redraw_text();
-            sync_drawings()
+            sync_drawings();
+            document.getElementById("text_controller_inside")?.remove();
         }
     });
 

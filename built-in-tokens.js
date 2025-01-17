@@ -24,14 +24,21 @@ const builtInTokens = [
   {
     "name": "Flame 1",
     "folderPath": "/Overlays",
-    "image": "https://thumbs.gfycat.com/GiddyMajorDingo-small.gif",
+    "image": "https://drive.google.com/file/d/1eWHXQsHloLuocYOuHnvvd0zymZQMH7sm",
     "disableborder": true,
     "square": true
   },
   {
     "name": "Flame 2",
     "folderPath": "/Overlays",
-    "image": "https://cutewallpaper.org/21/fire-gif-transparent-background/Fire-PNG-Gif-Transparent-Fire-GifPNG-Images-PlusPNG.gif",
+    "image": "https://abovevtt-assets.s3.eu-central-1.amazonaws.com/tokens/flame2.gif",
+    "disableborder": true,
+    "square": true
+  },
+  {
+    "name": "Map Pin",
+    "folderPath": "/Overlays",
+    "image": "https://drive.google.com/file/d/1excaNtaLfn_Hj5EHuH-h8iimpzC36i0M",
     "disableborder": true,
     "square": true
   },
@@ -39,6 +46,20 @@ const builtInTokens = [
     "name": "Nebula",
     "folderPath": "/Overlays",
     "image": "https://drive.google.com/file/d/1AeoKU444D3DrtjebegH0yRXNolrqw89K/view?usp=sharing",
+    "disableborder": true,
+    "square": true
+  },
+  {
+    "name": "Skull",
+    "folderPath": "/Overlays",
+    "image": "https://drive.google.com/file/d/1of0nmVMh8rnt9pz6iri9gtq-mCQmgCWA",
+    "disableborder": true,
+    "square": true
+  },
+  {
+    "name": "Star",
+    "folderPath": "/Overlays",
+    "image": "https://drive.google.com/file/d/1F868fVhQnzFALTcnEIXUDeAl3UKZccKA",
     "disableborder": true,
     "square": true
   },
@@ -530,7 +551,7 @@ const builtInTokens = [
       "https://i.imgur.com/zrN3Vnt.png",
       "https://i.imgur.com/eKfE1AV.png"
     ]
-  }
+  },
 ];
 
 [...Array(26).keys()]
@@ -540,7 +561,8 @@ const builtInTokens = [
         "name": letter,
         "folderPath": "/Letters",
         "image": `https://abovevtt-assets.s3.eu-central-1.amazonaws.com/letters/${letter}.png`,
-        "disableborder": true
+        "disableborder": true,
+        "auraislight": false
       })
     });
 [...Array(99).keys()]
@@ -550,18 +572,21 @@ const builtInTokens = [
         "name": `${number}`.padStart(2, "0"),
         "folderPath": "/Numbers",
         "image": `https://abovevtt-assets.s3.eu-central-1.amazonaws.com/numbers/${number}.png`,
-        "disableborder": true
+        "disableborder": true,
+        "auraislight": false
       })
     });
 builtInTokens.push({
   "name": `! - Exclamation Mark`,
   "folderPath": "/Letters",
   "image": `https://abovevtt-assets.s3.eu-central-1.amazonaws.com/letters/EXCLAMATION.png`,
-  "disableborder": true
+  "disableborder": true,
+  "auraislight": false
 })
 builtInTokens.push({
   "name": `? - Question Mark`,
   "folderPath": "/Letters",
   "image": `https://abovevtt-assets.s3.eu-central-1.amazonaws.com/letters/QUESTION.png`,
-  "disableborder": true
+  "disableborder": true,
+  "auraislight": false
 })

@@ -1,22 +1,30 @@
 
-function build_and_display_stat_block_with_id(monsterId, container, tokenId, callback) {
-    let cachedMonsterItem = cached_monster_items[monsterId];
+function build_and_display_stat_block_with_id(monsterId, container, tokenId, callback, open5e=false) {
+
+
+    let cachedMonsterItem = open5e ? cached_open5e_items[monsterId] : cached_monster_items[monsterId];
     if (cachedMonsterItem) {
-        display_stat_block_in_container(new MonsterStatBlock(cachedMonsterItem.monsterData), container, tokenId);
-        if (callback) {
-            callback();
-        }
+      display_stat_block_in_container(new MonsterStatBlock(cachedMonsterItem.monsterData), container, tokenId);
+      if (callback) {
+          callback();
+      }
     } else {
-        fetch_and_cache_monsters([monsterId], function () {
-            display_stat_block_in_container(new MonsterStatBlock(cached_monster_items[monsterId].monsterData), container, tokenId);
+        fetch_and_cache_monsters([monsterId], function (open5e = false) {
+            if(!open5e){
+
+              display_stat_block_in_container(new MonsterStatBlock(cached_monster_items[monsterId].monsterData), container, tokenId);
+            }
+            else{
+              display_stat_block_in_container(new MonsterStatBlock(cached_open5e_items[monsterId].monsterData), container, tokenId);
+            }
             if (callback) {
                 callback();
             }
-        });
+        }, open5e);
     }
 }
 
-function build_and_display_stat_block_with_data(monsterData, container, tokenId) {
+function build_and_display_stat_block_with_data(monsterData, container, tokenId, open5e=false) {
     let cachedMonsterItem = cached_monster_items[monsterData.id];
     if (cachedMonsterItem) {
         // we have a cached monster. this data is the best data we have so display that instead of whatever we were given
@@ -26,39 +34,156 @@ function build_and_display_stat_block_with_data(monsterData, container, tokenId)
         // is not as good as the data we get from fetching the monster directly so
         // build with what the listItem has on it, then fetch more details, then re-render it with the updated details
         display_stat_block_in_container(new MonsterStatBlock(monsterData), container, tokenId);
-        fetch_and_cache_monsters([monsterData.id], function () {
-            display_stat_block_in_container(new MonsterStatBlock(cached_monster_items[monsterData.id].monsterData), container, tokenId);
-        });
+        let monsterId = (monsterData.slug) ? monsterData.slug : monsterData.id
+        fetch_and_cache_monsters([monsterId], function (open5e = false) {
+          if(!open5e){
+            display_stat_block_in_container(new MonsterStatBlock(cached_monster_items[monsterId].monsterData), container, tokenId);
+          }
+          else{
+            display_stat_block_in_container(new MonsterStatBlock(cached_open5e_items[monsterId].monsterData), container, tokenId);}
+        }, open5e);
     }
 }
 
-function display_stat_block_in_container(statBlock, container, tokenId) {
-    const html = build_monster_stat_block(statBlock);
+function build_stat_block_for_copy(listItem, options){
+  const monsterData = listItem.monsterData;
+  let cachedMonsterItem = cached_monster_items[monsterData.id];
+    if (cachedMonsterItem) {
+        // we have a cached monster. this data is the best data we have so display that instead of whatever we were given
+        create_token_inside(find_sidebar_list_item_from_path(RootFolder.MyTokens.path), undefined, undefined, undefined, options, build_monster_copy_stat_block(new MonsterStatBlock(cachedMonsterItem.monsterData)));
+    } else {
+       let monsterId = (monsterData.slug) ? monsterData.slug : monsterData.id
+        fetch_and_cache_monsters([monsterId], function () {
+           create_token_inside(find_sidebar_list_item_from_path(RootFolder.MyTokens.path), undefined, undefined, undefined, options, build_monster_copy_stat_block(new MonsterStatBlock(cached_monster_items[monsterId].monsterData)));
+        }, false);
+    }
+}
+
+function display_stat_block_in_container(statBlock, container, tokenId, customStatBlock = undefined) {
+    const token = window.TOKEN_OBJECTS[tokenId];
+    const html = (customStatBlock) ? $(`
+    <div class="container avtt-stat-block-container custom-stat-block">${customStatBlock}</div>`) : build_monster_stat_block(statBlock, token);
     container.find("#noAccessToContent").remove(); // in case we're re-rendering with better data
     container.find(".avtt-stat-block-container").remove(); // in case we're re-rendering with better data
     container.append(html);
+    if(customStatBlock){
+      window.JOURNAL.translateHtmlAndBlocks(html)
+      add_journal_roll_buttons(html, tokenId);
+      window.JOURNAL.add_journal_tooltip_targets(html);
+
+      
+      $(container).find('.add-input').each(function(){
+        let numberFound = $(this).attr('data-number');
+        const spellName = $(this).attr('data-spell');
+        const remainingText = $(this).hasClass('each') ? '' : `${spellName} slots remaining`
+
+        if (token.options.abilityTracker?.[spellName]>= 0){
+          numberFound = token.options.abilityTracker[spellName]
+        } else{
+          token.track_ability(spellName, numberFound)
+        }
+        let input = createCountTracker(token, spellName, numberFound, remainingText, "");
+        $(this).find('p').remove();
+        $(this).after(input)
+      })
+      container.find(`.avtt-stat-block-container`).append(`<div class="image" style="display: block;"><${(token.options.videoToken == true || ['.mp4', '.webm','.m4v'].some(d => token.options.imgsrc.includes(d))) ? 'video disableremoteplayback muted' : 'img'}
+            src="${token.options.imgsrc}"
+            class="monster-image"
+            style="max-width: 100%;">
+            </div>
+            <div style="display:flex;flex-direction:row;width:100%;justify-content:space-between;padding:10px;">
+                <a id="monster-image-to-gamelog-link" class="ddbeb-button monster-details-link" href="${token.options.imgsrc}" target='_blank' >Send Image To Gamelog</a>
+            </div>`)
+    }
     container.find("#monster-image-to-gamelog-link").on("click", function (e) {
         e.stopPropagation();
         e.preventDefault();
         const imgContainer = $(e.target).parent().prev();
-        imgContainer.find("img").attr("href", imgContainer.find("img").attr("src"));
-        imgContainer.find("img").addClass("magnify");
+        imgContainer.find("img, video").attr("href", imgContainer.find("img, video").attr("src"));
+        imgContainer.find("img, video").addClass("magnify");
         send_html_to_gamelog(imgContainer[0].outerHTML);
     });
-    container.find("div.image").append(statBlock.imageHtml());
+
+   
+    container.find("p>em>strong, p>strong>em").off("contextmenu.sendToGamelog").on("contextmenu.sendToGamelog", function (e) {
+      e.preventDefault();
+      if(e.altKey || e.shiftKey || e.ctrlKey || e.metaKey)
+        return;
+      let outerP = event.target.closest('p').outerHTML;
+      const regExFeature = new RegExp(`<p(.+)?>.+(${event.target.outerHTML.replace(/([\(\)])/g,"\\$1")}.+?)(</p>|<br ?/?>|<p>)`, 'gi');
+      let matched = `<p>${outerP.matchAll(regExFeature).next().value[2]}</p>`;
+      send_html_to_gamelog(matched);
+    })
+
+    container.find("p>em>strong, p>strong>em").off("click.roll").on("click.roll", function (e) {
+      e.preventDefault();
+      if($(event.target).text().includes('Recharge'))
+        return;
+      let rollButtons = $(event.target.closest('p')).find('.avtt-roll-button');
+      const displayName = window.TOKEN_OBJECTS[tokenId] ? window.TOKEN_OBJECTS[tokenId].options?.revealname == true ? window.TOKEN_OBJECTS[tokenId].options.name : `` : target.find(".mon-stat-block__name-link").text(); // Wolf, Owl, etc
+      const creatureAvatar = window.TOKEN_OBJECTS[tokenId]?.options.imgsrc || statBlock.data.avatarUrl;
+
+      for(let i = 0; i<rollButtons.length; i++){      
+        let data = getRollData(rollButtons[i]);
+        let diceRoll;
+
+        if(data.expression != undefined){
+          if (/^1d20[+-]([0-9]+)/g.test(data.expression)) {
+             if(e.altKey){
+                if(e.shiftKey){
+                  diceRoll = new DiceRoll(`3d20kh1${data.modifier}`, data.rollTitle, data.rollType, displayName, creatureAvatar, "monster");
+                 }
+                 else if(e.ctrlKey || e.metaKey){
+                  diceRoll = new DiceRoll(`3d20kl1${data.modifier}`, data.rollTitle, data.rollType, displayName, creatureAvatar, "monster");
+                 }
+             }
+             else if(e.shiftKey){
+              diceRoll = new DiceRoll(`2d20kh1${data.modifier}`, data.rollTitle, data.rollType, displayName, creatureAvatar, "monster");
+             }
+             else if(e.ctrlKey || e.metaKey){
+              diceRoll = new DiceRoll(`2d20kl1${data.modifier}`, data.rollTitle, data.rollType, displayName, creatureAvatar, "monster");
+             }else{
+              diceRoll = new DiceRoll(data.expression, data.rollTitle, data.rollType, displayName, creatureAvatar, "monster")
+             }
+          }
+          else{
+            diceRoll = new DiceRoll(data.expression, data.rollTitle, data.rollType, displayName, creatureAvatar, "monster")
+          }
+        
+
+ 
+          window.diceRoller.roll(diceRoll, true, undefined, undefined, undefined, data.damageType);
+
+        }
+      }
+    })
+
+
+    if(!customStatBlock)
+      container.find("div.image").append(statBlock.imageHtml(token));
     container.find("a").attr("target", "_blank"); // make sure we only open links in new tabs
-    scan_monster(container, statBlock, tokenId);
+    if(!customStatBlock)
+      scan_monster(container, statBlock, tokenId);
+    else
+      add_ability_tracker_inputs(container, tokenId)
     // scan_creature_pane(container, statBlock.name, statBlock.image);
     add_stat_block_hover(container);
+
+    let abilities = container.find("p>em>strong, p>strong>em");
+    for(let i = 0; i<abilities.length; i++){
+      if($(abilities[i]).closest('p').find('.avtt-roll-button').length>0 && !$(abilities[i]).closest('p').text().includes('Recharge')){
+        $(abilities[i]).toggleClass('avtt-ability-roll-button', true);
+      }
+    }
     $("span.hideme").parent().parent().hide();
 }
 
-function build_monster_stat_block(statBlock) {
+function build_monster_stat_block(statBlock, token) {
     if (!statBlock.userHasAccess) {
         return `<div id='noAccessToContent' style='height: 100%;text-align: center;width: 100%;padding: 10px;font-weight: bold;color: #944;'>You do not have access to this content on DndBeyond.</div>`;
     }
     return `
-<div class="container avtt-stat-block-container">
+<div class="container avtt-stat-block-container ${(statBlock.data.slug) ? 'open5eMonster' : ''}">
   <div id="content" class="main content-container" style="padding:0!important">
     <section class="primary-content" role="main">
 
@@ -297,7 +422,7 @@ function build_monster_stat_block(statBlock) {
             <div class="image" style="display: block;"></div>
             <div style="display:flex;flex-direction:row;width:100%;justify-content:space-between;padding:10px;">
                 <a class="ddbeb-button monster-details-link" href="${statBlock.data.url}" target='_blank' >View Details Page</a>
-                <a id="monster-image-to-gamelog-link" class="ddbeb-button monster-details-link" href="${statBlock.data.largeAvatarUrl}" target='_blank' >Send Image To Gamelog</a>
+                <a id="monster-image-to-gamelog-link" class="ddbeb-button monster-details-link" href="${token?.options?.imgsrc == statBlock.data.avatarUrl || token?.options?.imgsrc == undefined ? statBlock.data.largeAvatarUrl : token.options.imgsrc}" target='_blank' >Send Image To Gamelog</a>
             </div>
 
 
@@ -332,24 +457,277 @@ function build_monster_stat_block(statBlock) {
 </div>
 `;
 }
+function build_monster_copy_stat_block(statBlock) {
+    if (!statBlock.userHasAccess) {
+        return `<div id='noAccessToContent' style='height: 100%;text-align: center;width: 100%;padding: 10px;font-weight: bold;color: #944;'>You do not have access to this content on DndBeyond.</div>`;
+    }
+    return `
+<div class="container ${(statBlock.data.slug) ? 'open5eMonster' : ''}">
+  <div id="content" class="main content-container" style="padding:0!important">
+    <section class="primary-content" role="main">
 
-function fetch_config_json() {
-    window.ajaxQueue.addDDBRequest({
-        url: "https://www.dndbeyond.com/api/config/json",
-        success: function (responseData) {
-            console.log("Successfully fetched config/json from DDB API");
-            window.ddbConfigJson = responseData;
-        },
-        error: function (errorMessage) {
-            console.warn("Failed to fetch config json from DDB API", errorMessage);
-        }
-    })
+      <div class="monster-details">
+
+        <div class="more-info details-more-info" style="padding: 2px;">
+          <div class="detail-content">
+
+            <div class="mon-stat-block ddbc-creature-block" style="column-count: 1;margin:0;">
+              <div class="mon-stat-block__header ddbc-creature-block__header">
+                <div class="mon-stat-block__name ddbc-creature-block__name">
+                  <a class="mon-stat-block__name-link ddbc-creature-block__name-link" href="${statBlock.data.url}" target="_blank">
+                    ${statBlock.data.name}
+                  </a>
+                </div>
+
+                <div class="mon-stat-block__meta ddbc-creature-block__meta">${statBlock.sizeName} ${statBlock.monsterTypeHtml}, ${statBlock.alignmentName}</div>
+              </div>
+              <div class="mon-stat-block__separator ddbc-creature-block__separator">
+                <img class="mon-stat-block__separator-img ddbc-creature-block__separator-img" alt="" src="https://media-waterdeep.cursecdn.com/file-attachments/0/579/stat-block-header-bar.svg">
+              </div>
+              <div class="mon-stat-block__attributes">
+                <div class="mon-stat-block__attribute ddbc-creature-block__attribute">
+                  <span class="mon-stat-block__attribute-label ddbc-creature-block__attribute-label">Armor Class</span>
+                  <span class="mon-stat-block__attribute-value">
+                    <span class="mon-stat-block__attribute-data-value">
+                        ${statBlock.data.armorClass}
+                    </span>
+                    <span class="mon-stat-block__attribute-data-extra ddbc-creature-block__attribute-data-extra">
+                        ${statBlock.data.armorClassDescription}
+                    </span>
+                  </span>
+                </div>
+                <div class="mon-stat-block__attribute ddbc-creature-block__attribute">
+                  <span class="mon-stat-block__attribute-label ddbc-creature-block__attribute-label">Hit Points</span>
+                  <span class="mon-stat-block__attribute-data">
+                    <span class="mon-stat-block__attribute-data-value">
+                        ${statBlock.data.averageHitPoints}
+                    </span>
+                    <span class="mon-stat-block__attribute-data-extra ddbc-creature-block__attribute-data-extra">
+                        (${statBlock.data.hitPointDice.diceString})
+                    </span>
+                  </span>
+                </div>
+                <div class="mon-stat-block__attribute ddbc-creature-block__attribute">
+                  <span class="mon-stat-block__attribute-label">Speed</span>
+                  <span class="mon-stat-block__attribute-data">
+                    <span class="mon-stat-block__attribute-data-value">
+                        ${statBlock.speedDescription}
+                    </span>
+                  </span>
+                </div>
+              </div>
+              <div class="mon-stat-block__stat-block">
+                <div class="mon-stat-block__separator">
+                  <img class="mon-stat-block__separator-img" alt="" src="https://media-waterdeep.cursecdn.com/file-attachments/0/579/stat-block-header-bar.svg">
+                </div>
+                <div class="ability-block ddbc-creature-block__abilities">
+                  <div class="ability-block__stat ability-block__stat--str ddbc-creature-block__ability-stat">
+                    <div class="ability-block__heading ddbc-creature-block__ability-heading">STR</div>
+                    <div class="ability-block__data">
+                      <span class="ability-block__score">${statBlock.str}</span>
+                      <span class="ability-block__modifier ddbc-creature-block__ability-modifier">${statBlock.statButton(statBlock.str, "STR")}</span>
+                    </div>
+                  </div>
+                  <div class="ability-block__stat ability-block__stat--dex ddbc-creature-block__ability-stat">
+                    <div class="ability-block__heading ddbc-creature-block__ability-heading">DEX</div>
+                    <div class="ability-block__data">
+                      <span class="ability-block__score">${statBlock.dex}</span>
+                      <span class="ability-block__modifier ddbc-creature-block__ability-modifier">${statBlock.statButton(statBlock.dex, "DEX")}</span>
+                    </div>
+                  </div>
+                  <div class="ability-block__stat ability-block__stat--con ddbc-creature-block__ability-stat">
+                    <div class="ability-block__heading ddbc-creature-block__ability-heading">CON</div>
+                    <div class="ability-block__data">
+                      <span class="ability-block__score">${statBlock.con}</span>
+                      <span class="ability-block__modifier ddbc-creature-block__ability-modifier">${statBlock.statButton(statBlock.con, "CON")}</span>
+                    </div>
+                  </div>
+                  <div class="ability-block__stat ability-block__stat--int ddbc-creature-block__ability-stat">
+                    <div class="ability-block__heading ddbc-creature-block__ability-heading">INT</div>
+                    <div class="ability-block__data">
+                      <span class="ability-block__score">${statBlock.int}</span>
+                      <span class="ability-block__modifier ddbc-creature-block__ability-modifier">${statBlock.statButton(statBlock.int, "INT")}</span>
+                    </div>
+                  </div>
+                  <div class="ability-block__stat ability-block__stat--wis ddbc-creature-block__ability-stat">
+                    <div class="ability-block__heading ddbc-creature-block__ability-heading">WIS</div>
+                    <div class="ability-block__data">
+                      <span class="ability-block__score">${statBlock.wis}</span>
+                      <span class="ability-block__modifier ddbc-creature-block__ability-modifier">${statBlock.statButton(statBlock.wis, "WIS")}</span>
+                    </div>
+                  </div>
+                  <div class="ability-block__stat ability-block__stat--cha ddbc-creature-block__ability-stat">
+                    <div class="ability-block__heading ddbc-creature-block__ability-heading">CHA</div>
+                    <div class="ability-block__data">
+                      <span class="ability-block__score">${statBlock.cha}</span>
+                      <span class="ability-block__modifier ddbc-creature-block__ability-modifier">${statBlock.statButton(statBlock.cha, "CHA")}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="mon-stat-block__separator">
+                  <img class="mon-stat-block__separator-img" alt="" src="https://media-waterdeep.cursecdn.com/file-attachments/0/579/stat-block-header-bar.svg">
+                </div>
+              </div>
+              <div class="mon-stat-block__tidbits">
+                ${$(`<div>${statBlock.savingThrowsHtml}</div>`).text() != '' ? `
+                 <div class="mon-stat-block__tidbit ddbc-creature-block__tidbit">
+                  <span class="mon-stat-block__tidbit-label ddbc-creature-block__tidbit-label">Saving Throws</span>
+                  <span class="mon-stat-block__tidbit-data">
+                    ${statBlock.savingThrowsHtml}
+                  </span>
+                </div>
+                `: ''}  
+               
+                ${$(`<div>${statBlock.skillsHtml}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__tidbit ddbc-creature-block__tidbit">
+                    <span class="mon-stat-block__tidbit-label ddbc-creature-block__tidbit-label">Skills</span>
+                    <span class="mon-stat-block__tidbit-data">
+                      ${statBlock.skillsHtml}
+                    </span>
+                  </div>
+                `: ''}
+
+                ${$(`<div>${statBlock.damageVulnerabilitiesHtml}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__tidbit ddbc-creature-block__tidbit">
+                    <span class="mon-stat-block__tidbit-label ddbc-creature-block__tidbit-label">Damage Vulnerabilities</span>
+                    <span class="mon-stat-block__tidbit-data">
+                      ${statBlock.damageVulnerabilitiesHtml}
+                    </span>
+                  </div>
+                `: ''}
+
+                ${$(`<div>${statBlock.damageResistancesHtml}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__tidbit ddbc-creature-block__tidbit">
+                    <span class="mon-stat-block__tidbit-label ddbc-creature-block__tidbit-label">Damage Resistances</span>
+                    <span class="mon-stat-block__tidbit-data">
+                      ${statBlock.damageResistancesHtml}
+                    </span>
+                  </div>
+                `: ''}
+
+                ${$(`<div>${statBlock.damageImmunitiesHtml}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__tidbit ddbc-creature-block__tidbit">
+                    <span class="mon-stat-block__tidbit-label ddbc-creature-block__tidbit-label">Damage Immunities</span>
+                    <span class="mon-stat-block__tidbit-data">
+                      ${statBlock.damageImmunitiesHtml}
+                    </span>
+                  </div>
+                `: ''}
+
+                ${$(`<div>${statBlock.conditionImmunitiesHtml}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__tidbit ddbc-creature-block__tidbit">
+                    <span class="mon-stat-block__tidbit-label ddbc-creature-block__tidbit-label">Condition Immunities</span>
+                    <span class="mon-stat-block__tidbit-data">
+                      ${statBlock.conditionImmunitiesHtml}
+                    </span>
+                  </div>
+                `: ''}
+
+                ${$(`<div>${statBlock.sensesHtml}</div>`).text() ? `
+                  <div class="mon-stat-block__tidbit ddbc-creature-block__tidbit">
+                    <span class="mon-stat-block__tidbit-label ddbc-creature-block__tidbit-label">Senses</span>
+                    <span class="mon-stat-block__tidbit-data">
+                      ${statBlock.sensesHtml}
+                    </span>
+                  </div>
+                `: ''}
+
+
+                <div class="mon-stat-block__tidbit ddbc-creature-block__tidbit">
+                  <span class="mon-stat-block__tidbit-label ddbc-creature-block__tidbit-label">Languages</span>
+                  <span class="mon-stat-block__tidbit-data">
+                    ${statBlock.languagesHtml}
+                  </span>
+                </div>
+
+                <div class="mon-stat-block__tidbit-container">
+                  <div class="mon-stat-block__tidbit ddbc-creature-block__tidbit">
+                    <span class="mon-stat-block__tidbit-label ddbc-creature-block__tidbit-label">Challenge</span>
+                    <span class="mon-stat-block__tidbit-data">
+                      ${statBlock.challengeRatingHtml}
+                    </span>
+                  </div>
+
+                  <div class="mon-stat-block__tidbit-spacer"></div>
+                  <div class="mon-stat-block__tidbit ddbc-creature-block__tidbit">
+                    <span class="mon-stat-block__tidbit-label ddbc-creature-block__tidbit-label">Proficiency Bonus</span>
+                    <span class="mon-stat-block__tidbit-data">
+                        ${statBlock.proficiencyBonusHtml}
+                    </span>
+                  </div>
+
+                </div>
+
+              </div>
+
+              <div class="mon-stat-block__separator">
+                <img class="mon-stat-block__separator-img" alt="" src="https://media-waterdeep.cursecdn.com/file-attachments/0/579/stat-block-header-bar.svg">
+              </div>
+              
+              <div class="mon-stat-block__description-blocks ddbc-creature-block__description-blocks">
+                ${$(`<div>${statBlock.specialTraitsDescription}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__description-block ddbc-creature-block__description-block">
+                    <div class="mon-stat-block__description-block-content">
+                      ${statBlock.specialTraitsDescription}
+                    </div>
+                  </div>
+                `: ''}
+
+                ${$(`<div>${statBlock.actionsDescription}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__description-block ddbc-creature-block__description-block">
+                    <div class="mon-stat-block__description-block-heading ddbc-creature-block__description-block-heading">Actions</div>
+                    <div class="mon-stat-block__description-block-content">
+                      ${statBlock.actionsDescription}
+                    </div>
+                  </div>
+                `: ''}
+
+                ${$(`<div>${statBlock.bonusActionsDescription}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__description-block ddbc-creature-block__description-block">
+                      <div class="mon-stat-block__description-block-heading ddbc-creature-block__description-block-heading">Bonus Actions</div>
+                      <div class="mon-stat-block__description-block-content">
+                        ${statBlock.bonusActionsDescription}
+                      </div>
+                  </div>
+                `: ''} 
+    
+                ${$(`<div>${statBlock.reactionsDescription}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__description-block ddbc-creature-block__description-block">
+                      <div class="mon-stat-block__description-block-heading ddbc-creature-block__description-block-heading">Reactions</div>
+                      <div class="mon-stat-block__description-block-content">
+                        ${statBlock.reactionsDescription}
+                      </div>
+                  </div>
+                `: ''}
+
+                ${$(`<div>${statBlock.legendaryActionsDescription}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__description-block ddbc-creature-block__description-block">
+                      <div class="mon-stat-block__description-block-heading ddbc-creature-block__description-block-heading">Legendary Actions</div>
+                      <div class="mon-stat-block__description-block-content">
+                        ${statBlock.legendaryActionsDescription}
+                      </div>
+                  </div>
+                `: ''}
+
+                ${$(`<div>${statBlock.mythicActionsDescription}</div>`).text() != '' ? `
+                  <div class="mon-stat-block__description-block ddbc-creature-block__description-block">
+                      <div class="mon-stat-block__description-block-heading ddbc-creature-block__description-block-heading">Mythic Actions</div>
+                      <div class="mon-stat-block__description-block-content">
+                        ${statBlock.mythicActionsDescription}
+                      </div>
+                  </div>
+                `: ''}
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+`;
 }
-
-$(function() {
-    fetch_config_json();
-})
-
 class MonsterStatBlock {
     constructor(data) {
         this.data = data;
@@ -371,14 +749,13 @@ class MonsterStatBlock {
         return this.findObj("creatureSizes", this.data.sizeId);
     }
     get sizeName() {
-        return this.sizeObj?.name || "";
+        return this.data.size || this.sizeObj?.name || "";
     }
-
     get typeObj() {
         return this.findObj("monsterTypes", this.data.typeId);
     }
     get typeName() {
-        return this.typeObj?.name || "";
+        return this.data.type || this.typeObj?.name || "";
     }
     get monsterTypeHtml() {
         if (!this.data.subTypes || this.data.subTypes.length === 0) {
@@ -392,7 +769,7 @@ class MonsterStatBlock {
         return this.findObj("alignments", this.data.alignmentId);
     }
     get alignmentName() {
-        return this.alignmentObj?.name || "";
+        return this.data.alignment || this.alignmentObj?.name || "";
     }
 
     get speedDescription() {
@@ -520,16 +897,36 @@ class MonsterStatBlock {
         return objects.map(obj => obj.name).join(", ");
     }
     get damageVulnerabilitiesHtml() {
+        if(this.data.damage_vulnerabilities){
+          return this.data.damage_vulnerabilities.replace(/(?:^|\s)\w/g, function(match) {
+              return match.toUpperCase();
+          });
+        }
         return this.damageAdjustmentsHtml(DAMAGE_ADJUSTMENT_TYPE_VULNERABILITIES);
     }
     get damageResistancesHtml() {
+        if(this.data.damage_resistances){
+          return this.data.damage_resistances.replace(/(?:^|\s)\w/g, function(match) {
+              return match.toUpperCase();
+          });
+        }
         return this.damageAdjustmentsHtml(DAMAGE_ADJUSTMENT_TYPE_RESISTANCE);
     }
     get damageImmunitiesHtml() {
+        if(this.data.damage_immunities){
+          return this.data.damage_immunities.replace(/(?:^|\s)\w/g, function(match) {
+              return match.toUpperCase();
+          });
+        }
         return this.damageAdjustmentsHtml(DAMAGE_ADJUSTMENT_TYPE_IMMUNITY);
     }
 
     get conditionImmunitiesHtml() {
+        if(this.data.condition_immunities){
+          return this.data.condition_immunities.replace(/(?:^|\s)\w/g, function(match) {
+              return match.toUpperCase();
+          });
+        }
         if (this.data.conditionImmunitiesHtml === "string" && this.data.conditionImmunitiesHtml.length > 0) {
             return this.data.conditionImmunitiesHtml;
         }
@@ -565,6 +962,9 @@ class MonsterStatBlock {
         if (!this.data.languages || this.data.languages.length === 0) {
             return "<span class='hideme'></span>";
         }
+        if(typeof this.data.languages === "string"){
+          return this.data.languages
+        }
         return this.data.languages
             .map(l => {
                 const definition = this.findObj("languages", l.languageId);
@@ -578,21 +978,18 @@ class MonsterStatBlock {
     }
 
     get challengeRatingHtml() {
-        const definition = this.findObj("challengeRatings", this.data.challengeRatingId);
-        let crString = parseInt(definition.value);
-        if(definition.value == 0.125){
-          crString = `1/8`
-        }
-        else if(definition.value == 0.25){
-          crString = `1/4`
-        }
-        else if(definition.value == 0.5){
-          crString = `1/2`
-        }
-
-
-
-        return `${crString} (${definition.xp.toLocaleString()} XP)`;
+      const definition = this.findObj("challengeRatings", this.data.challengeRatingId);  
+      let crString = parseInt(definition.value);
+      if(definition.value == 0.125){
+        crString = `1/8`
+      }
+      else if(definition.value == 0.25){
+        crString = `1/4`
+      }
+      else if(definition.value == 0.5){
+        crString = `1/2`
+      }
+      return `${crString} (${definition.xp.toLocaleString()} XP)`;
     }
 
     get proficiencyBonusHtml() {
@@ -604,10 +1001,16 @@ class MonsterStatBlock {
     get sourceBookHtml() {
         let html = `<p class="source monster-source">`;
         if (this.data.sourceId) {
-            const definition = this.findObj("sources", this.data.sourceId);
-            html += definition.description;
+            if(!this.data.document__title){
+              const definition = this.findObj("sources", this.data.sourceId);
+              html += definition.description;
+            }
+            else{
+              html += this.data.document__title;
+            }
+            
             if (this.data.sourcePageNumber) {
-                html += `<span class="page-number">, pg. ${this.data.sourcePageNumber}</span>`;
+                html += `, pg. ${this.data.sourcePageNumber}`;
             }
         }
         html += `</p>`;
@@ -653,10 +1056,10 @@ class MonsterStatBlock {
         return hidemeHack;
     }
 
-    imageHtml() {
+    imageHtml(token) {
         // const url = this.findBestAvatarUrl();
-        let img = $(`<img
-            src="${this.data.largeAvatarUrl}"
+        let img = $(`<${(token?.options?.videoToken != undefined && (token?.options?.videoToken == true || ['.mp4', '.webm','.m4v'].some(d => token?.options?.imgsrc.includes(d)))) ? 'video disableremoteplayback muted' : 'img'}
+            src="${token?.options?.videoToken == undefined || token?.options?.imgsrc == this.data.avatarUrl ? this.data.largeAvatarUrl : token.options.imgsrc}"
             alt="${this.data.name}"
             class="monster-image"
             style="max-width: 100%;"
@@ -672,7 +1075,7 @@ class MonsterStatBlock {
             if (cur === "largeAvatarUrl") {
                 nextUrl = el.attr("data-large-avatar-url");
                 try {
-                    var parts = nextUrl.split("/");
+                    let parts = nextUrl.split("/");
                     parts[parts.length - 2] = "1000";
                     parts[parts.length - 3] = "1000";
                     nextUrl = parts.join("/");
@@ -699,7 +1102,7 @@ class MonsterStatBlock {
         });
 
 
-        let html = $(`<a href="${this.data.largeAvatarUrl}" data-title="<a target='_blank' href='${this.data.largeAvatarUrl}' class='link link-full'>View Full Image</a>"
+        let html = $(`<a href="${token?.options?.videoToken == undefined || token?.options?.imgsrc == this.data.avatarUrl ? this.data.largeAvatarUrl : token.options.imgsrc}" data-title="<a target='_blank' href='${token?.options?.videoToken == undefined || token?.options?.imgsrc == this.data.avatarUrl ? this.data.largeAvatarUrl : token.options.imgsrc}' class='link link-full'>View Full Image</a>"
            target="_blank"></a>`);
         html.append(img);
         return html;
@@ -766,13 +1169,14 @@ const fetch_tooltip = mydebounce((dataTooltipHref, callback) => {
 
 function display_tooltip(tooltipJson, container, clientY) {
     if (typeof tooltipJson?.Tooltip === "string") {
-        remove_tooltip();
+        remove_tooltip(0, false);
 
         console.log("container", container)
         const tooltipHtmlString = tooltipJson.Tooltip;
 
         build_and_display_sidebar_flyout(clientY, function (flyout) {
             flyout.addClass("prevent-sidebar-modal-close"); // clicking inside the tooltip should not close the sidebar modal that opened it
+            flyout.addClass("tooltip-flyout")
             const tooltipHtml = $(tooltipHtmlString);
             flyout.append(tooltipHtml);
             let sendToGamelogButton = $(`<a class="ddbeb-button" href="#">Send To Gamelog</a>`);
@@ -823,13 +1227,13 @@ function display_tooltip(tooltipJson, container, clientY) {
 }
 
 let removeToolTipTimer = undefined;
-function remove_tooltip(delay = 0) {
+function remove_tooltip(delay = 0, removeHoverNote = true) {
     if (delay > 0) {
-        removeToolTipTimer = setTimeout(remove_sidebar_flyout, delay);
+        removeToolTipTimer = setTimeout(function(){remove_sidebar_flyout(removeHoverNote)}, delay);
     } else {
         clearTimeout(removeToolTipTimer);
         removeToolTipTimer = undefined;
-        remove_sidebar_flyout();
+        remove_sidebar_flyout(removeHoverNote);
     }
 }
 
@@ -840,13 +1244,18 @@ function add_stat_block_hover(statBlockContainer) {
             const dataTooltipHref = $(hoverEvent.currentTarget).attr("data-tooltip-href");
             if (typeof dataTooltipHref === "string") {
                 fetch_tooltip(dataTooltipHref, function (tooltipJson) {
-                    let container = $(hoverEvent.target).closest("#resizeDragMon");
+
+                    let container = $(hoverEvent.target).closest(".sidebar-flyout");
+                    if(container.find('.tooltip-header').length === 0){
+                      container = $(hoverEvent.target).closest("#resizeDragMon");
+                    }
                     if (container.length === 0) {
                         container = $(hoverEvent.target).closest(".sidebar-modal");
                     }
                     if (container.length === 0) {
-                        container = is_characters_page() ? $(".ct-sidebar__pane-content") : $(".sidebar__pane-content");
+                        container = is_characters_page() ? $(".ct-sidebar__inner [class*='styles_content']") : $(".sidebar__pane-content");
                     }
+
                     display_tooltip(tooltipJson, container, hoverEvent.clientY);
                 });
             }
@@ -858,6 +1267,7 @@ function add_stat_block_hover(statBlockContainer) {
 
 function send_html_to_gamelog(outerHtml) {
     console.log("send_html_to_gamelog", outerHtml);
+    outerHtml = outerHtml.replace('disableremoteplayback', 'disableremoteplayback autoplay loop');
     let html = window.MB.encode_message_text(outerHtml);
     const data = {
         player: window.PLAYER_NAME,

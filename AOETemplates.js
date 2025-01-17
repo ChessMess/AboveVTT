@@ -23,6 +23,7 @@ function get_available_styles(){
     return [
         "Acid",
         "Bludgeoning",
+        "Darkness",
         "Default",
         "Fire",
         "Force",
@@ -42,14 +43,15 @@ function get_available_styles(){
 
 
 
-function setup_aoe_button() {
+function setup_aoe_button(buttons) {
     
-    const aoeButton = $("<div style='display:inline;width:75px' id='aoe_button' class='drawbutton menu-button hideable ddbc-tab-options__header-heading'><u>A</u>OE</div>");
+    const aoeButton = $("<div style='display:inline-block;width:fit-content;' id='aoe_button' class='drawbutton menu-button hideable ddbc-tab-options__header-heading'><u>A</u>OE</div>");
     const aoeMenu = $("<div id='aoe_menu' class='top_menu'></div>");
 
     aoeMenu.append("<div class='menu-subtitle'>Size</div>");
     
-    aoeMenu.append(`<div><input min='5' tabindex='2' id='aoe_feet_in_menu' value='20' style='width:75px;margin:0px;text-align:center' maxlength='10' type='number' step='5'></div>`);
+    aoeMenu.append(`<div><input min='5' onclick='$(this).select()'
+        tabindex='2' id='aoe_feet_in_menu' value='20' style='width:75px;margin:0px;text-align:center' maxlength='10' type='number' step='5'></div>`);
 
     aoeMenu.append("<div class='menu-subtitle'>Style</div>");
     aoeMenu.append(
@@ -113,6 +115,7 @@ function setup_aoe_button() {
         const shape = $(e.currentTarget).attr("data-shape") 
         const style = $("#aoe_styles").val().toLowerCase()
         const options = build_aoe_token_options(style, shape, size)
+
         place_aoe_token_in_centre(options)
         $('#select-button').click();
 
@@ -151,9 +154,12 @@ function sanitize_aoe_shape(shape){
 }
 
 function set_spell_override_style(spellName){
-    const spells = ["hypnotic pattern", "web", "fog cloud", "stinking cloud"]
+    const spells = ["hypnotic pattern", "web", "fog cloud", "stinking cloud", "darkness"]
     if (typeof spellName === "string" && spells.includes(spellName.toLowerCase())){
         return `aoe-style-${spellName.toLowerCase().replace(" ","-")}`
+    }
+    else if (typeof spellName === "string" && spellName == 'Maddening Darkness'){
+        return `aoe-style-darkness`
     }
     return ""
 }
@@ -237,12 +243,16 @@ function get_aoe_default_options(){
         disableborder: true,
         square: true,
         restrictPlayerMove: false,
-        hidden: false,
         locked: false,
         disableaura: true,
         legacyaspectratio: false,
-        deleteableByPlayers: true
-    };
+        deleteableByPlayers: true,
+        lockRestrictDrop: 'none',
+        auraVisible: false,
+        auraislight: false,
+        revealInFog: true,
+        hidden: false
+    }
     return options
 }
 
@@ -267,21 +277,33 @@ function build_aoe_token_options(style, shape, countGridSquares, name = "") {
         size = size * 2;
     }
 
-    const options = get_aoe_default_options()
+    let options = get_aoe_default_options()
     options.name = name
-    options.imgsrc = build_aoe_img_name(style, shape, name);
+    
     options.size = shape !== "line" ? size : ""
     options.gridHeight = shape === "line" ? countGridSquares : ""
     options.gridWidth = shape === "line" ? 1 : ""
 
+    if(style == 'darkness'){
+        options = {
+            ...options,
+            darkness: true
+        }
+    }
+    options = {
+        ...options,
+        ...find_or_create_token_customization('aoe', `_Area_of_Effects_${shape}_AoE`, 'aoeFolder', 'aoeFolder').allCombinedOptions()
+    }
+    
+    options.imgsrc = build_aoe_img_name(style, shape, name);
     return options
 }
 
 function build_aoe_token_image(token, scale, rotation){
-    let tokenImageContainer = $(`<div class=token-image style='transform:scale(${scale}) rotate(${rotation}deg)'>`);
+    let tokenImageContainer = $(`<div class=token-image style='transform:scale(var(--token-scale)) rotate(var(--token-rotation))'>`);
     let aoeClassName = token.options.imgsrc.replace("class=","").trim();
     console.debug("build_aoe_token_image aoeClassName", aoeClassName);
-    let tokenImage = $(`<div data-img="true" style='transform:scale(1) rotate(0)' class='${aoeClassName}'></div>`);
+    let tokenImage = $(`<div data-img="true" class='${aoeClassName}'></div>`);
 
     if (token.options.imgsrc.includes("cone")){
         tokenImageContainer.append(`<div class='aoe-border aoe-border-cone'></div>`)

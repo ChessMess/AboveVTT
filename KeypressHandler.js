@@ -1,8 +1,10 @@
-var altHeld = false;
-var ctrlHeld = false;
-var shiftHeld = false;
-var toggleSnap=false;
-
+let altHeld = false;
+let ctrlHeld = false;
+let shiftHeld = false;
+let toggleSnap = false;
+let cursor_x = -1;
+let cursor_y = -1;
+let arrowKeysHeld = [0, 0, 0, 0];
 function unhide_interface() {
     if ($('#hide_interface_button').hasClass('unhidden')) {
         $('#hide_interface_button').hide().removeClass('unhidden');
@@ -60,17 +62,28 @@ Mousetrap.bind('n', function () {   //while combat menu is open, press n to cycl
 });
 
 Mousetrap.bind('r', function () {       //ruler
-    $('#measure-button').click()
+    $('#ruler_button').click()
 });
 
 
-Mousetrap.bind('s', function () {       //video fullscreen toggle
+Mousetrap.bind('s', function () {       //select
     $('#select-button').click()
 });
 
+Mousetrap.bind('e', function () {       //elev
+    $('#elev_button').click()
+});
 
-Mousetrap.bind('v', function () {       //video fullscreen toggle
-    $('#jitsi_switch').click()
+Mousetrap.bind('v', function () {       //video toggle 
+    if(shiftHeld)
+        return;
+
+    $('#peerVideo_switch').click()
+});
+
+Mousetrap.bind('shift+v', function () {       //check token vision
+   window.SelectedTokenVision = true;
+   redraw_light();
 });
 
 Mousetrap.bind('=', function () {       //zoom plus
@@ -91,19 +104,72 @@ Mousetrap.bind('0', function () {
 
 Mousetrap.bind('space', function (e) {     //collapse/show character sheet
 	e.preventDefault();
+    if(shiftHeld)
+        return;
     if(!window.DM) {
         $('#sheet_button').click()
     }
+    else{
+        $('#pause_players').click()
+    }
 });
-
+Mousetrap.bind('shift+space', function (e) {     //collapse/show character sheet
+    e.preventDefault();
+    if(!window.DM) {
+        let tokenId = $(`.token[data-id*='${window.PLAYER_ID}']`).attr('data-id');
+        if(tokenId != undefined)
+            window.TOKEN_OBJECTS[tokenId].highlight();   
+    }
+});
+Mousetrap.bind('shift+s', function (e) { 
+    e.preventDefault();
+    if ($('#grid_snap_drawings .ddbc-tab-options__header-heading').hasClass('ddbc-tab-options__header-heading--is-active')) {
+        $('#grid_snap_drawings .ddbc-tab-options__header-heading').toggleClass('ddbc-tab-options__header-heading--is-active', false)
+        window.toggleDrawingSnap = false;
+    } else {
+        $('#grid_snap_drawings .ddbc-tab-options__header-heading').toggleClass('ddbc-tab-options__header-heading--is-active', true)
+        window.toggleDrawingSnap = true;
+    }
+});
+           
 
 Mousetrap.bind('q', function () {       //collapse/show sidebar. (q is next to tab, also used to show/hide elements)
     $('#hide_rightpanel').click()
 });
 
+Mousetrap.bind('w', function () {
+    if(shiftHeld)
+        return;
+    $('#wall_button').click()   
+});
+Mousetrap.bind('shift+w', function () {
+    if(window.DM){
+        $('#show_walls').toggleClass(['button-enabled', 'ddbc-tab-options__header-heading--is-active']);
+        redraw_light_walls();
+    }
+       
+});
+Mousetrap.bind('l', function () {
+    if(shiftHeld)
+        return;
+    $('#vision_button').click()
+});
+Mousetrap.bind('shift+l', function () {
+     if(window.DM){
+        $('#select_locked').click();
+    }
+});
+
 Mousetrap.bind('esc', function () {     //deselect all buttons
     stop_drawing();
-    $('#select-button').click();
+
+    if(!$("#wall_button").hasClass("button-enabled")){
+        $('#select-button').click();
+    }
+    else{
+        redraw_light_walls();
+    }
+
     close_token_context_menu();
     $(".draggable-token-creation").addClass("drag-cancelled");
     $(".draggable-sidebar-item-reorder").addClass("drag-cancelled");
@@ -122,6 +188,7 @@ Mousetrap.bind('esc', function () {     //deselect all buttons
         close_sidebar_modal();
     }
     remove_tooltip();
+    removeError();
 });
 
 //menu specific shortcuts, select the nth element of menu when it's open
@@ -134,66 +201,105 @@ function handle_menu_number_press(e) {
 Mousetrap.bind(["1","2","3","4","5","6","7","8","9"], function (e) {
     handle_menu_number_press(e)
 });
+const moveLoop = function(callback = function(){}){
+    for (let i = 0; i < window.CURRENTLY_SELECTED_TOKENS.length; i++) {
+        let id = window.CURRENTLY_SELECTED_TOKENS[i];
+        let token = window.TOKEN_OBJECTS[id];
+        callback(token);
+    }
+    return true;
+}
+
+//Throttle so the token doesn't immediately fly off map if button is held and set trailing only we can register diagonal movement as 1 move.
+const throttleMoveRequest = throttle(() => {
+    requestAnimationFrame(moveKeyWatch);
+}, 5, {leading: false, trailing: true})
+
+
+//setTimeout so we can be sure diagonal key combos are pressed or not.
+function moveKeyWatch() {
+    if (arrowKeysHeld[0] && arrowKeysHeld[2]) {
+        moveLoop(function(token){token.moveUpLeft()});
+    } 
+    else if (arrowKeysHeld[0] && arrowKeysHeld[3]) {
+       moveLoop(function(token){token.moveUpRight()});
+    } 
+    else if (arrowKeysHeld[1] && arrowKeysHeld[2]) {
+       moveLoop(function(token){token.moveDownLeft()});
+    } 
+    else if (arrowKeysHeld[1] && arrowKeysHeld[3]) {
+       moveLoop(function(token){token.moveDownRight()});
+    } 
+    else if (arrowKeysHeld[0]) {
+       moveLoop(function(token){token.moveUp()});
+    } 
+    else if (arrowKeysHeld[1]) {
+       moveLoop(function(token){token.moveDown()});
+    }
+    else if (arrowKeysHeld[2]) {
+      moveLoop(function(token){token.moveLeft()});
+    }
+    else if (arrowKeysHeld[3]) {
+       moveLoop(function(token){token.moveRight()});
+    }  
+}
+
 
 Mousetrap.bind('up', function (e) {
+    arrowKeysHeld[0] = 1;
     const visibleMenuId = `#${$('[id*="_menu"].visible').attr("id")}`
     if (visibleMenuId){
         // prevent scrolling the window
         e.preventDefault();
         $(`${visibleMenuId} .ddbc-tab-options__header-heading--is-active`).first().parent().prevAll().not("[data-skip='true']").first().children().first().click()
     }
-
-    if ($("#select-button").hasClass("button-enabled") || !window.DM) {
-        for (let i = 0; i < window.CURRENTLY_SELECTED_TOKENS.length; i++) {
-            let id = window.CURRENTLY_SELECTED_TOKENS[i];
-            let token = window.TOKEN_OBJECTS[id];
-            token.moveUp();
-        }
-        return false;
-    }
-});
-
+    throttleMoveRequest();
+}, 'keydown');
 Mousetrap.bind('down', function (e) {
+    arrowKeysHeld[1] = 1;
     const visibleMenuId = `#${$('[id*="_menu"].visible').attr("id")}`
     if (visibleMenuId){
         // prevent scrolling the window
         e.preventDefault();
         $(`${visibleMenuId} .ddbc-tab-options__header-heading--is-active`).first().parent().nextAll().not("[data-skip='true']").first().children().first().click()
-
     }
-
+    throttleMoveRequest();
+}, 'keydown');
+Mousetrap.bind('left', function (e) {
+    arrowKeysHeld[2] = 1;
     if ($("#select-button").hasClass("button-enabled") || !window.DM) {
-        for (let i = 0; i < window.CURRENTLY_SELECTED_TOKENS.length; i++) {
-            let id = window.CURRENTLY_SELECTED_TOKENS[i];
-            let token = window.TOKEN_OBJECTS[id];
-            token.moveDown();
-        }
-        return false;
+        e.preventDefault();
     }
-});
-
-
-Mousetrap.bind('left', function () {
+    throttleMoveRequest();
+}, 'keydown');
+Mousetrap.bind('right', function (e) {
+    arrowKeysHeld[3] = 1;
     if ($("#select-button").hasClass("button-enabled") || !window.DM) {
-        for (let i = 0; i < window.CURRENTLY_SELECTED_TOKENS.length; i++) {
-            let id = window.CURRENTLY_SELECTED_TOKENS[i];
-            let token = window.TOKEN_OBJECTS[id];
-            token.moveLeft();
-        }
-        return false;
+        e.preventDefault();    
     }
-});
+    throttleMoveRequest();
+}, 'keydown');
 
-Mousetrap.bind('right', function () {
-    if ($("#select-button").hasClass("button-enabled") || !window.DM) {
-        for (let i = 0; i < window.CURRENTLY_SELECTED_TOKENS.length; i++) {
-            let id = window.CURRENTLY_SELECTED_TOKENS[i];
-            let token = window.TOKEN_OBJECTS[id];
-            token.moveRight();
-        }
-        return false;
-    }
-});
+Mousetrap.bind('up', function (e) {
+    setTimeout(()=>{
+     arrowKeysHeld[0] = 0;   
+    },50)
+}, 'keyup');
+Mousetrap.bind('down', function (e) {
+    setTimeout(()=>{
+     arrowKeysHeld[1] = 0;     
+    },50)  
+}, 'keyup');
+Mousetrap.bind('left', function (e) {
+    setTimeout(()=>{
+     arrowKeysHeld[2] = 0;     
+    },50) 
+}, 'keyup');
+Mousetrap.bind('right', function (e) {
+    setTimeout(()=>{
+     arrowKeysHeld[3] = 0;   
+    },50)          
+}, 'keyup');
 
 Mousetrap.bind('alt', function () {
     if (altHeld) {
@@ -201,15 +307,23 @@ Mousetrap.bind('alt', function () {
     } else {
         altHeld = true;
     }
-    if (!($('#measure-button').hasClass('button-enabled'))) {
-        $('#measure-button').click()
+    window.selectedMenuButton = $('#VTTWRAPPER ~ .ddbc-tab-options--layout-pill>button.button-enabled')
+    if (!($('#ruler_button').hasClass('button-enabled'))) {
+        $('#ruler_button').click()
     }
+
+    $(window).off('blur.altCheck').one('blur.altCheck', function(){
+      window.altHeld = false;
+        if ($('#ruler_button').hasClass('button-enabled')) {
+            window.selectedMenuButton.click()
+        }
+    })
     return false
 }, 'keydown');
 
 Mousetrap.bind('alt', function () {
-    if ($('#measure-button').hasClass('button-enabled')) {
-        $('#select-button').click()
+    if ($('#ruler_button').hasClass('button-enabled')) {
+        window.selectedMenuButton.click()
     }
     altHeld = false;
     return false
@@ -223,6 +337,9 @@ Mousetrap.bind('shift', function () {
     } else {
         shiftHeld = true;
     }
+    $(window).off('blur.shiftCheck').one('blur.shiftCheck', function(){
+      window.shiftHeld = false;
+    })
 }, 'keydown');
 
 Mousetrap.bind('shift', function () {
@@ -240,6 +357,21 @@ Mousetrap.bind('ctrl', function () {
 	window.toggleSnap=false;
 }, 'keyup');
 
+Mousetrap.bind(['ctrl+shift', 'shift+ctrl'], function () {
+    ctrlHeld=true;
+    shiftHeld=true;
+    $(window).off('blur.shiftCheck').one('blur.shiftCheck', function(){
+      window.shiftHeld = false;
+    })
+    window.toggleSnap=true;
+}, 'keydown');
+
+Mousetrap.bind(['ctrl+shift', 'shift+ctrl'], function () {
+    ctrlHeld=false;
+    shiftHeld = false;
+    window.toggleSnap=false;
+}, 'keyup');
+
 Mousetrap.bind('shift+h', function () {
     unhide_interface();
 });
@@ -254,19 +386,43 @@ Mousetrap.bind('command+c', function(e) {
 
 Mousetrap.bind('ctrl+v', function(e) {
     if (window.navigator.userAgent.indexOf("Mac") != -1) return; // Mac/iOS use command
-    paste_selected_tokens();
+    if($('#temp_overlay:hover').length>0){
+        paste_selected_tokens(window.cursor_x, window.cursor_y);
+    } 
+    else {
+        let center = center_of_view();
+        paste_selected_tokens(center.x, center.y);
+    }
 });
 Mousetrap.bind('command+v', function(e) {
-    paste_selected_tokens();
+    if($('#temp_overlay:hover').length>0){
+        paste_selected_tokens(window.cursor_x, window.cursor_y);
+    } 
+    else {
+        let center = center_of_view();
+        paste_selected_tokens(center.x, center.y);
+    }
 });
+
+document.onmousemove = function(event)
+{
+ window.cursor_x = event.pageX;
+ window.cursor_y = event.pageY;
+}
 
 Mousetrap.bind(['backspace', 'del'], function(e) {
     delete_selected_tokens();
 });
 Mousetrap.bind('ctrl+z', function(e) {
+    if($('input:focus').length ==0){
+        e.preventDefault();
+    }
     handle_undo();
 });
 Mousetrap.bind('command+z', function(e) {
+    if($('input:focus').length ==0){
+        e.preventDefault();
+    }
     handle_undo();
 });
 Mousetrap.bind(']', function(e) {
@@ -278,21 +434,32 @@ Mousetrap.bind('[', function(e) {
 
 function handle_undo(){
     const buttonSelectedClasses = "button-enabled ddbc-tab-options__header-heading--is-active"
+
     if ($("#select-button").hasClass(buttonSelectedClasses)){
         undo_delete_tokens();
     }
     else if(($("#fog_button").hasClass(buttonSelectedClasses))){
         $("#fog_undo").click()
     }
-    else if(($("#draw_button").hasClass(buttonSelectedClasses))){
+    else if($("#draw_button").hasClass(buttonSelectedClasses)){
         $("#draw_undo").click()
+    }
+    else if($("#vision_button").hasClass(buttonSelectedClasses)){
+        $("#light_undo").click()
     }
     else if(($("#text_button").hasClass(buttonSelectedClasses))){
         $("#text_undo").click()
     }
+    else if(($("#wall_button").hasClass(buttonSelectedClasses))){
+        $("#wall_undo").click()
+    }
+    else if(($("#elev_button").hasClass(buttonSelectedClasses))){
+        $("#elev_undo").click()
+    }
+
 }
 
-var rotationKeyPresses = [];
+let rotationKeyPresses = [];
 window.addEventListener("keydown", async (event) => {
     const arrowKeys = [ 'ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown' ];
     if (event.shiftKey && arrowKeys.includes(event.key) ) {
